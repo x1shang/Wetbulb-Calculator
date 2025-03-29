@@ -1,6 +1,6 @@
 import math
 import matplotlib.pyplot as plt
-from PySide2.QtWidgets import QApplication, QFileDialog
+from PySide2.QtWidgets import QApplication,QFileDialog
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtCore import QObject,QStringListModel
 # from PySide2.QtGui import QPixmap
@@ -235,12 +235,12 @@ def calculate_wetbulb(initial_guess,T,Td,P=1013.25,max_iter=50,tol=1e-6):
                 gamma = 0.000667*(1+0.00115*T_w)*P
                 f = e_sat-gamma*(T-T_w)-e
                 de_dT = calculate_dedt(T_w,name,P)
-                df_dT = de_dT+gamma-0.00066*0.00115*P*(T-T_w)
+                df_dT = de_dT+gamma-0.000667*0.00115*P*(T-T_w)
                 T_w_new = T_w-f/df_dT
                 calculator.add_iteration(name,iter_num+1,T_w,abs(f))
 
                 if abs(T_w_new-T_w) < tol and not iter_num < 4:
-                    last_rh = e/calculate_esat(T_w_new,name)
+                    last_rh = e/calculate_esat(T,name)
                     if 1 >= last_rh >= 0:
                         calculator.add_result(name,T_w_new,last_rh)
                         break
@@ -280,7 +280,7 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
         es_dry = calculate_esat(T_g,name)
         gamma = 0.000667*(1+0.00115*T_w)*P
         e = es_wet-gamma*(T_g-T_w)
-        rh = e/es_wet
+        rh = e/es_dry
         if e >= es_dry or rh >= 1:
             calculator.add_result(name,T_g,rh=1)
         else:
@@ -345,50 +345,94 @@ class MainWindow(QObject):
         row = index.row()
         item_text = self.list_model.data(index)
         self.list_model_2.setStringList([])
+
         if row == 0 or any(s in item_text for s in ["不适用","失败","未收敛","错误"]):
             return
+
         try:
             parts = item_text.split(":")
-            if len(parts) < 2:
-                return
+            if len(parts) < 2: return
             method_part,data_part = parts[0].strip(),parts[1].strip()
             data_values = data_part.split()
-            if len(data_values) < 2:
-                return
-            temp_str = data_values[0]
-            rh_str = data_values[1]
-            temperature = float(temp_str.replace(self.temperature_unit,""))
-            if self.temperature_unit == 'K':
-                temperature_C = temperature-273.15
-            elif self.temperature_unit == '℉':
-                temperature_C = (temperature-32)*5/9
+            if len(data_values) < 2: return
+
+            temp_str,rh_str = data_values[0],data_values[1]
+            displayed_temp = float(temp_str.replace(self.temperature_unit,""))
+            rh = float(rh_str.replace("%",""))/100  # 相对湿度转小数
+
+            T_g_input = float(self.ui.lineEdit_3.text())
+            T_g = self.changetemp(T_g_input)
+            T_g_K = T_g+273.15
+
+            if "露点" in self.ui.label_2.text():
+                Td = self.changetemp(displayed_temp)
+                Tw = self.changetemp(float(self.ui.lineEdit.text()))
             else:
-                temperature_C = temperature
-            T_k = temperature_C+273.15
-            rh = float(rh_str.replace("%",""))/100  # 转为小数
-            P_input = self.ui.lineEdit_2.text()
-            if not P_input:
-                raise ValueError("大气压强未输入")
-            P = float(P_input)
-            if self.pressure_unit != 'hPa':
-                P = self.changepre(P)
+                Tw = self.changetemp(displayed_temp)
+                Td = self.changetemp(float(self.ui.lineEdit.text()))
 
-            es = calculate_esat(temperature_C,method_part)
-            e = es*rh
+            P_input = float(self.ui.lineEdit_2.text())
+            P_hPa = self.changepre(P_input)
 
-            w = 0.622*(e/(P-e))*1000 if P > e else 0   # 混合率
-            ws = 0.622*(es/(P-es))*1000 if P > es else 0   # 饱和混合率
-            Rv = 461.5  # 水汽气体常数 (J/kg·K)
-            absolute_humidity = (e*100)/(Rv*T_k)*1e3  # 绝对湿度
-            specific_humidity = (0.622*e)/(P-0.378*e)*1000 if P > 0.378*e else 0 # 2. 比湿（g/kg）
+            Rv = 461.5  # 水汽气体常数
+            Rd = 287.04  # 干空气（精确至小数点后两位）
+            Cp = 1004.75  # 定压比热容（精确值）
+
+            esd = calculate_esat(Td,method_part)
+            esw = calculate_esat(Tw,method_part)
+            e = calculate_esat(T_g,method_part)
+            P_dry = P_hPa-esw
+
+            ro_dry = P_dry*100/(Rd*T_g_K)
+            ro_vapor = esw*100/(Rv*T_g_K)
+            ro = ro_dry+ro_vapor
+            dm = ro_vapor/ro_dry #含湿量
+            dm1 = dm*1000
+            han = 1.01*T_g+(2500+1.84*T_g)*dm
+
+            esd1 = self.prechange(esd)
+            esw1 = self.prechange(esw)
+            e1 = self.prechange(e)
+            P_dry1 = self.prechange(P_dry)
+
+            sat_mixing_ratio = 0.62198*(e/(P_hPa-e))*1000 if P_hPa > e else 0 # 饱和混合率 (g/kg)
+            mixing_ratio = 0.62198*(esw/(P_hPa-esw))*1000 if P_hPa > esw else 0   # 混合率 (g/kg)
+            absolute_humidity = (esw*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
+            specific_humidity = (0.62198*esw)/(P_hPa-0.37802*esw)*1000 if P_hPa > 0.37802*esw else 0 # 比湿 (g/kg)
+
+            # 虚温（使用干球温度和比湿）
+            q = specific_humidity/1000  # 比湿转kg/kg
+            virtual_temp_K = T_g_K*(1+0.6078*q)  # 精确系数0.6078
+            virtual_temp = self.tempchange(virtual_temp_K-273.15)  # 转用户单位
+
+            # 位温（精确公式，使用干球温度）
+            theta_K = T_g_K*(1000.0/P_hPa)**(Rd/Cp)
+            theta = self.tempchange(theta_K-273.15)  # 转用户单位
+
+            t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
+            t_lcl = self.tempchange(1/t_lcl0-243.5)
+            p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.8))
+            p_lcl = self.prechange(p_lcl0)
 
             results = [
-                f"{method_part} ",
-                f"相对湿度：{rh*100} %",
+                f"{method_part} | 常用气象参数",
+                f"相对湿度: {rh*100:.2f}%",
                 f"绝对湿度: {absolute_humidity:.2f} g/m³",
-                f"比湿: {specific_humidity:.2f} g/kg",
-                f"混合率: {w:.2f} g/kg",
-                f"饱和混合率: {ws:.2f} g/kg"
+                f"比湿: {specific_humidity:.4f} g/kg",
+                f"蒸气压: {esw1:.2f} {self.pressure_unit}",
+                f"饱和蒸气压: {e1:.2f} {self.pressure_unit}",
+                f"干空气分压: {P_dry1:.1f} {self.pressure_unit}",
+                f"干空气密度: {ro_dry:.3f} kg/m³",
+                f"水蒸气密度: {ro_vapor:.3f} kg/m³",
+                f"空气密度: {ro:.3f} kg/m³",
+                f"单位质量焓: {han:.2f} kJ/kg",
+                f"含湿量: {dm1:.3f} g/kg",
+                f"混合率: {mixing_ratio:.3f} g/kg",
+                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
+                f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
+                f"位温: {theta:.2f} {self.temperature_unit}",
+                f"lcl温度: {t_lcl:.2f} {self.temperature_unit}",
+                f"lcl压强: {p_lcl:.1f} {self.pressure_unit}"
             ]
             self.list_model_2.setStringList(results)
 
@@ -401,19 +445,13 @@ class MainWindow(QObject):
         self.ui.lineEdit.clear()
         self.ui.lineEdit_2.clear()
         self.ui.lineEdit_3.clear()
+        self.calculator = None
 
     def take_screenshot(self):
         # 捕获主窗口截图
         pixmap = self.ui.grab()
-
         # 弹出文件保存对话框
-        file_path,_ = QFileDialog.getSaveFileName(
-            self.ui,
-            "保存截图",
-            "",
-            "PNG 图片 (*.png);;JPEG 图片 (*.jpg)"
-        )
-
+        file_path,_ = QFileDialog.getSaveFileName(self.ui,"保存截图","","PNG 图片 (*.png);;JPEG 图片 (*.jpg)")
         if file_path:
             try:
                 pixmap.save(file_path)
@@ -439,6 +477,37 @@ class MainWindow(QObject):
         elif self.pressure_unit == 'bar':
             P *= 1000
         return P
+
+    def prechange(self,P):
+        if self.pressure_unit == 'Pa':
+            P *= 100
+        elif self.pressure_unit == 'mmHg':
+            P /= 1.33322
+        elif self.pressure_unit == 'cmHg':
+            P /= 13.3322
+        elif self.pressure_unit == 'bar':
+            P /= 1000
+        else:
+            P = P
+        return P
+
+    def changetemp(self,temperature):
+        if self.temperature_unit == 'K':
+            temperature -= 273.15
+        elif self.temperature_unit == '℉':
+            temperature = (temperature-32)*5/9
+        else:
+            temperature = temperature
+        return temperature
+
+    def tempchange(self,temperature):
+        if self.temperature_unit == 'K':
+            temperature += 273.15
+        elif self.temperature_unit == '℉':
+            temperature = temperature*9/5+32
+        else:
+            temperature = temperature
+        return temperature
 
     def get_initial_guess(self, T, T_other):
         if self.ui.radioButton_3.isChecked():
@@ -471,53 +540,20 @@ class MainWindow(QObject):
             cleaned_text = ''.join(filter(lambda x:x.isdigit() or x in ('.','-'),text))
             value = float(cleaned_text)
 
-            # 转换为标准单位（温度）
             if "温度" in field_name:
-                if self.temperature_unit == 'K':
-                    value_C = value-273.15
-                elif self.temperature_unit == '℉':
-                    value_C = (value-32)*5/9
-                else:
-                    value_C = value
-                # 验证标准单位范围
+                value_C = self.changetemp(value)
                 if value_C < min_C or value_C > max_C:
-                    # 转换为用户单位显示范围
-                    if self.temperature_unit == 'K':
-                        min_ui,max_ui = min_C+273.15,max_C+273.15
-                    elif self.temperature_unit == '℉':
-                        min_ui,max_ui = min_C*9/5+32,max_C*9/5+32
-                    else:
-                        min_ui,max_ui = min_C,max_C
+                    min_ui = self.tempchange(min_C)
+                    max_ui = self.tempchange(max_C)
                     self.show_error_dialog(
                         f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.temperature_unit} 范围内")
                     line_edit.clear()
                     return False
-
-            # 转换为标准单位（压强）
             elif "压强" in field_name:
-                if self.pressure_unit == 'Pa':
-                    value_hPa = value/100
-                elif self.pressure_unit == 'mmHg':
-                    value_hPa = value*1.33322
-                elif self.pressure_unit == 'cmHg':
-                    value_hPa = value*13.3322
-                elif self.pressure_unit == 'bar':
-                    value_hPa = value*1000
-                else:
-                    value_hPa = value
-                # 验证标准单位范围
+                value_hPa = self.changepre(value)
                 if value_hPa < 500 or value_hPa > 1100:
-                    # 转换为用户单位显示范围
-                    if self.pressure_unit == 'Pa':
-                        min_ui,max_ui = 500*100,1100*100
-                    elif self.pressure_unit == 'mmHg':
-                        min_ui,max_ui = 500/1.33322,1100/1.33322
-                    elif self.pressure_unit == 'cmHg':
-                        min_ui,max_ui = 500/13.3322,1100/13.3322
-                    elif self.pressure_unit == 'bar':
-                        min_ui,max_ui = 500/1000,1100/1000
-                    else:
-                        min_ui,max_ui = 500,1100
+                    min_ui = self.prechange(500)
+                    max_ui = self.prechange(1100)
                     self.show_error_dialog(f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.pressure_unit} 范围内")
                     line_edit.clear()
                     return False
@@ -533,24 +569,12 @@ class MainWindow(QObject):
             if not self.check_input(self.ui.lineEdit_3,"干球温度",self.temp_min,self.temp_max):
                 return
             T_input = float(self.ui.lineEdit_3.text())
-            if self.temperature_unit == 'K':
-                T = T_input-273.15
-            elif self.temperature_unit == '℉':
-                T = (T_input-32)*5/9
-            else:
-                T = T_input
-
+            T = self.changetemp(T_input)
             target_label = self.ui.label_2.text()
             if not self.check_input(self.ui.lineEdit,target_label,self.temp_min,self.temp_max):
                 return
             T_other_input = float(self.ui.lineEdit.text())
-            if self.temperature_unit == 'K':
-                T_other = T_other_input-273.15
-            elif self.temperature_unit == '℉':
-                T_other = (T_other_input-32)*5/9
-            else:
-                T_other = T_other_input
-
+            T_other = self.changetemp(T_other_input)
             if not self.check_input(self.ui.lineEdit_2,"大气压强",self.pressure_min,self.pressure_max):
                 return
             P_input = float(self.ui.lineEdit_2.text())
@@ -581,7 +605,6 @@ class MainWindow(QObject):
             self.show_error_dialog(str(e))
 
     def show_error_dialog(self,message):
-        """显示错误对话框"""
         error_dialog = QUiLoader().load('err.ui')
         error_dialog.textBrowser.setPlainText(message)
         error_dialog.pushButton.clicked.connect(error_dialog.close)
