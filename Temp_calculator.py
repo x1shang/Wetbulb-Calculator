@@ -1,9 +1,21 @@
 import math
+import sys
+import os
 import matplotlib.pyplot as plt
 from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtCore import QObject,QStringListModel
-# from PySide2.QtGui import QPixmap
+from PySide2.QtGui import QIcon
+
+def resource_path(relative_path):
+    """ 动态获取资源文件的绝对路径，兼容开发环境和打包后的EXE """
+    if hasattr(sys, '_MEIPASS'):
+        # 打包后的临时资源目录
+        base_path = sys._MEIPASS
+    else:
+        # 开发环境下的当前目录
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
@@ -297,7 +309,8 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
 class MainWindow(QObject):
     def __init__(self):
         super().__init__()
-        self.ui = QUiLoader().load('calculator.ui')
+        self.ui = QUiLoader().load(resource_path('calculator.ui'))
+        self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.bind_events()
         self.update_input_labels()
         self.ui.widget_iteration.setVisible(True)
@@ -624,7 +637,8 @@ class MainWindow(QObject):
             self.show_error_dialog(str(e))
 
     def show_error_dialog(self,message):
-        error_dialog = QUiLoader().load('err.ui')
+        error_dialog = QUiLoader().load(resource_path('err.ui'))
+        error_dialog.setWindowIcon(QIcon(resource_path('app.ico')))
         error_dialog.textBrowser.setPlainText(message)
         error_dialog.pushButton.clicked.connect(error_dialog.close)
         error_dialog.exec_()
@@ -639,12 +653,14 @@ class MainWindow(QObject):
 
 class AboutDialog:
     def __init__(self):
-        self.ui = QUiLoader().load('关于.ui')
+        self.ui = QUiLoader().load(resource_path('关于.ui'))
+        self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.ui.pushButton.clicked.connect(self.ui.close)
 
 class UnitDialog:
     def __init__(self,main_window):
-        self.ui = QUiLoader().load('单位.ui')
+        self.ui = QUiLoader().load(resource_path('单位.ui'))
+        self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.main_window = main_window
         self.ui.pushButton.clicked.connect(self.update_units)
         self.ui.pushButton_2.clicked.connect(self.ui.close)
