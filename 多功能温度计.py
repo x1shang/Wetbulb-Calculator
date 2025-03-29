@@ -175,7 +175,7 @@ def calculate_esat(T_w, method='magnus'):
         raise ValueError("无效的计算方法")
 
 
-def calculate_dedt(T_w, method, P=1013.25, delta=0.001):
+def calculate_dedt(T_w, method, delta=0.001):
 
     T_k = T_w + 273.15
 
@@ -219,7 +219,7 @@ def calculate_dedt(T_w, method, P=1013.25, delta=0.001):
 def esat_calculate(e,method,max_iter,tol,mint=-150,maxt=200):
 
     if method in MAGNUS_FORMULAS:
-        A, B, C = MAGNUS_FORMULAS[method](T_w)
+        A, B, C = MAGNUS_FORMULAS[method](e)
         term1 = math.log(e/A)
         return C*term1/(B-term1)
 
@@ -257,7 +257,6 @@ def calculate_wetbulb(T, Td, P=1013.25, max_iter=50, tol=1e-6):
             calculator.add_result(name, '不适用')
             continue
         T_w = initial_guess
-        last_rh = None
         for iter_num in range(max_iter):
             try:
                 e_sat = calculate_esat(T_w, method)

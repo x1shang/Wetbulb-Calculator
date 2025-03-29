@@ -2,7 +2,7 @@ import math
 import matplotlib.pyplot as plt
 from PySide2.QtWidgets import QApplication
 from PySide2.QtUiTools import QUiLoader
-from PySide2.QtCore import QObject
+from PySide2.QtCore import QObject,QStringListModel
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
@@ -28,6 +28,23 @@ WEXLER_FORMULAS = {
     'wexler_ice':lambda T:(-5674.5359,6.3925247,-0.009677843,0.62215701e-6,0.20747825e-8,-0.9484024e-12,4.1635019),
 }
 
+methods = [
+    ('Goff-水面','goff_water',lambda T_w:-10<=T_w<=100),
+    ('Wexler-水面','wexler_water',lambda T_w:-10<=T_w<=200),
+    ('Buck-水面','buck_water',lambda T_w:0<=T_w<=80),
+    ('Tetens-水面','tetens_water',lambda T_w:0<=T_w<=50),
+    ('Magnus-水面','magnus_water',lambda T_w:0<=T_w<=60),
+    ('August-水面','august_water',lambda T_w:0<=T_w<=60),
+    ('Arden-水面','arden_water',lambda T_w:0<=T_w<=100),
+    ('Gili-水面','gili_water',lambda T_w:-10<=T_w<=20),
+    ('Goff2-水面','goff_new',lambda T_w:-10<=T_w<=100),
+    ('Goff-冰面','goff_ice',lambda T_w:-100<=T_w<=10),
+    ('Wexler-冰面','wexler_ice',lambda T_w:-150<=T_w<=10),
+    ('Magnus-冰面','magnus_ice',lambda T_w:-65<=T_w<=0),
+    ('Buck-冰面','buck_ice',lambda T_w:-80<=T_w<=0),
+    ('Marti-冰面','marti_ice',lambda T_w:-150<=T_w<=0),
+]
+
 class CalculatorMemory:
     def __init__(self):
         self.methods = []
@@ -42,7 +59,7 @@ class CalculatorMemory:
 
     def show_results(self,mode):
 
-        output = f"\n{mode}温度|相对湿度:\n"  # 标题行
+        output = f"计算公式 | {mode}温度 | 相对湿度:\n"  # 标题行
 
         for item in self.methods:
             result = item['result']
@@ -99,23 +116,6 @@ class CalculatorMemory:
 
         plt.tight_layout()
         plt.show()
-
-methods = [
-    ('Goff-水面','goff_water',lambda T_w:-10<=T_w<=100),
-    ('Wexler-水面','wexler_water',lambda T_w:-10<=T_w<=200),
-    ('Buck-水面','buck_water',lambda T_w:0<=T_w<=80),
-    ('Tetens-水面','tetens_water',lambda T_w:0<=T_w<=50),
-    ('Magnus-水面','magnus_water',lambda T_w:0<=T_w<=60),
-    ('August-水面','august_water',lambda T_w:0<=T_w<=60),
-    ('Arden-水面','arden_water',lambda T_w:0<=T_w<=100),
-    ('Gili-水面','gili_water',lambda T_w:-10<=T_w<=20),
-    ('Goff2-水面','goff_new',lambda T_w:-10<=T_w<=100),
-    ('Goff-冰面','goff_ice',lambda T_w:-100<=T_w<=10),
-    ('Wexler-冰面','wexler_ice',lambda T_w:-150<=T_w<=10),
-    ('Magnus-冰面','magnus_ice',lambda T_w:-65<=T_w<=0),
-    ('Buck-冰面','buck_ice',lambda T_w:-80<=T_w<=0),
-    ('Marti-冰面','marti_ice',lambda T_w:-150<=T_w<=0),
-]
 
 def calculate_esat(T_w,method='magnus'):
     T_k = T_w+273.15
@@ -215,20 +215,9 @@ def esat_calculate(e,method,max_iter,tol,mint=-150,maxt=200):
             mint = t
     return (mint+maxt)/2
 
-def calculate_wetbulb(T,Td,P=1013.25,max_iter=50,tol=1e-6):
+def calculate_wetbulb(initial_guess,T,Td,P=1013.25,max_iter=50,tol=1e-6):
     global f
     calculator = CalculatorMemory()
-
-    print("\n请选择迭代初始值：\n1. 使用T_w=Td\n2. 使用T_w=T-n")
-    while True:
-        choice = input("请输入您的选择（1,2）：")
-        if choice == "1":
-            initial_guess = Td
-            break
-        elif choice == "2":
-            initial_guess = T-2 if T<0 else T-5
-            break
-        print("无效操作！")
 
     for name,method,condition in methods:
 
@@ -316,6 +305,13 @@ class MainWindow(QObject):
         self.temp_max = 200
         self.pressure_min = 500
         self.pressure_max = 1100
+        # memory
+        self.calculator = None
+        # 初始化输出列表
+        self.list_model = QStringListModel()
+        self.ui.listView.setModel(self.list_model)  # 绑定到左下角的 listView
+        # initial initial guess
+        self.initial_guess_strategy = "Td"
 
     def bind_events(self):
         """绑定按钮和单选按钮事件"""
@@ -336,12 +332,22 @@ class MainWindow(QObject):
         self.ui.lineEdit.returnPressed.connect(
             lambda:self.check_input(self.ui.lineEdit,self.ui.label_2.text(),*self.upt())
         )
+        # 迭代图按钮
+        self.ui.pushButton.clicked.connect(self.show_convergence_plot)
 
     def upp(self):
         return (self.pressure_min,self.pressure_max)
 
     def upt(self):
         return (self.temp_min,self.temp_max)
+
+    def get_initial_guess(self, T, T_other):
+        """根据单选按钮状态返回初始猜测值"""
+        if self.ui.radioButton_3.isChecked():
+            return T_other
+        elif self.ui.radioButton_4.isChecked():
+            ini = T-2 if T<0 else T-5
+            return ini
 
     def update_input_labels(self):
         """根据模式更新输入标签"""
@@ -352,6 +358,11 @@ class MainWindow(QObject):
             self.ui.label_2.setText("湿球温度：")
             self.ui.widget_iteration.setVisible(False)
 
+    def show_convergence_plot(self):
+        if self.calculator:
+            self.calculator.show_convergence()
+        else:
+            self.show_error_dialog("请先执行计算！")
     def check_input(self, line_edit, field_name, min_v, max_v):
         text = line_edit.text().strip()
         if not text:
@@ -394,8 +405,25 @@ class MainWindow(QObject):
             if T_other>=T:
                 raise ValueError(f"{target_label}不能高于干球温度！")
 
+            if self.ui.radioButton_2.isChecked():
+                try:
+                    initial_guess = self.get_initial_guess(T,T_other)
+                except ValueError as e:
+                    self.show_error_dialog(str(e))
+                    return
+            else:
+                initial_guess = None
+
             # 执行计算...
             print("输入验证通过，执行计算...")
+            if self.ui.radioButton_2.isChecked():  # 已知露点求湿球
+                self.calculator = calculate_wetbulb(initial_guess,T,T_other,P)
+            else:  # 已知湿球求露点
+                self.calculator = calculate_dewpoint(T,T_other,P)
+
+                # 显示结果到左下角列表
+            output = self.calculator.show_results("湿球" if self.ui.radioButton_2.isChecked() else "露点")
+            self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
 
         except Exception as e:
             self.show_error_dialog(str(e))
