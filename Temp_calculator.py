@@ -58,19 +58,22 @@ class CalculatorMemory:
             "rh":rh
         })
 
-    def show_results(self,mode):
-
-        output = f"计算公式 | {mode}温度 | 相对湿度:\n"  # 标题行
-
+    def show_results(self, mode):
+        output = f"计算公式 | {mode}温度 | 相对湿度:\n"
         for item in self.methods:
             result = item['result']
-            if isinstance(result,float):
+            if isinstance(result, float):
                 rh = item['rh']*100 if item['rh'] else 0
-                output += f"{item['method']}: {result:.4f}°C   {rh:.2f}%\n"
+                if main_window.temperature_unit == 'K':
+                    display_temp = result + 273.15
+                elif main_window.temperature_unit == '℉':
+                    display_temp = result * 9/5 + 32
+                else:
+                    display_temp = result
+                output += f"{item['method']}: {display_temp:.2f}{main_window.temperature_unit}   {rh:.2f}%\n"
             else:
                 output += f"{item['method']}: {result}\n"
-
-        return output  # 返回完整字符串
+        return output
 
     def add_iteration(self,method,iteration,T_w,residual):
         """记录单次迭代数据"""
@@ -295,29 +298,24 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
 class MainWindow(QObject):
     def __init__(self):
         super().__init__()
-        # 加载主窗口
         self.ui = QUiLoader().load('calculator.ui')
-        # 绑定信号
         self.bind_events()
-        # 初始化模式
         self.update_input_labels()
         self.ui.widget_iteration.setVisible(True)
         self.temp_min = -150
         self.temp_max = 200
         self.pressure_min = 500
         self.pressure_max = 1100
-        # memory
         self.calculator = None
-        # 初始化输出列表
         self.list_model = QStringListModel()
         self.list_model_2 = QStringListModel()
         self.ui.listView.setModel(self.list_model)  # 绑定到左下角的 listView
         self.ui.listView_2.setModel(self.list_model_2)
-        # initial initial guess
         self.initial_guess_strategy = "Td"
+        self.temperature_unit = '℃'
+        self.pressure_unit = 'hPa'
 
     def bind_events(self):
-        """绑定按钮和单选按钮事件"""
         # 模式切换
         self.ui.radioButton_2.toggled.connect(self.update_input_labels)
         self.ui.radioButton.toggled.connect(self.update_input_labels)
@@ -375,7 +373,6 @@ class MainWindow(QObject):
         return self.temp_min,self.temp_max
 
     def get_initial_guess(self, T, T_other):
-        """根据单选按钮状态返回初始猜测值"""
         if self.ui.radioButton_3.isChecked():
             return T_other
         elif self.ui.radioButton_4.isChecked():
@@ -383,7 +380,6 @@ class MainWindow(QObject):
             return ini
 
     def update_input_labels(self):
-        """根据模式更新输入标签"""
         if self.ui.radioButton_2.isChecked():  # 已知露点求湿球
             self.ui.label_2.setText("露点温度：")
             self.ui.widget_iteration.setVisible(True)
@@ -397,20 +393,67 @@ class MainWindow(QObject):
         else:
             self.show_error_dialog("请先执行计算！")
 
-    def check_input(self, line_edit, field_name, min_v, max_v):
+    def check_input(self,line_edit,field_name,min_C,max_C):
         text = line_edit.text().strip()
         if not text:
             self.show_error_dialog(f"{field_name}不能为空！")
             line_edit.clear()
             return False
         try:
-            # 清理非数字字符（保留负号和小数点）
-            cleaned_text = ''.join(filter(lambda x: x.isdigit() or x in ('.', '-'), text))
+            cleaned_text = ''.join(filter(lambda x:x.isdigit() or x in ('.','-'),text))
             value = float(cleaned_text)
-            if value < min_v or value > max_v:
-                self.show_error_dialog(f"输入值需在 [{min_v}, {max_v}] 范围内")
-                line_edit.clear()
-                return False
+
+            # 转换为标准单位（温度）
+            if "温度" in field_name:
+                if self.temperature_unit == 'K':
+                    value_C = value-273.15
+                elif self.temperature_unit == '℉':
+                    value_C = (value-32)*5/9
+                else:
+                    value_C = value
+                # 验证标准单位范围
+                if value_C<min_C or value_C>max_C:
+                    # 转换为用户单位显示范围
+                    if self.temperature_unit == 'K':
+                        min_ui,max_ui = min_C+273.15,max_C+273.15
+                    elif self.temperature_unit == '℉':
+                        min_ui,max_ui = min_C*9/5+32,max_C*9/5+32
+                    else:
+                        min_ui,max_ui = min_C,max_C
+                    self.show_error_dialog(
+                        f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.temperature_unit} 范围内")
+                    line_edit.clear()
+                    return False
+
+            # 转换为标准单位（压强）
+            elif "压强" in field_name:
+                if self.pressure_unit == 'Pa':
+                    value_hPa = value/100
+                elif self.pressure_unit == 'mmHg':
+                    value_hPa = value*1.33322
+                elif self.pressure_unit == 'cmHg':
+                    value_hPa = value*13.3322
+                elif self.pressure_unit == 'bar':
+                    value_hPa = value*1000
+                else:
+                    value_hPa = value
+                # 验证标准单位范围
+                if value_hPa<500 or value_hPa>1100:
+                    # 转换为用户单位显示范围
+                    if self.pressure_unit == 'Pa':
+                        min_ui,max_ui = 500*100,1100*100
+                    elif self.pressure_unit == 'mmHg':
+                        min_ui,max_ui = 500/1.33322,1100/1.33322
+                    elif self.pressure_unit == 'cmHg':
+                        min_ui,max_ui = 500/13.3322,1100/13.3322
+                    elif self.pressure_unit == 'bar':
+                        min_ui,max_ui = 500/1000,1100/1000
+                    else:
+                        min_ui,max_ui = 500,1100
+                    self.show_error_dialog(f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.pressure_unit} 范围内")
+                    line_edit.clear()
+                    return False
+
             return True
         except ValueError:
             self.show_error_dialog(f"{field_name}必须是有效数字！")
@@ -419,21 +462,40 @@ class MainWindow(QObject):
 
     def validate_and_calculate(self):
         try:
-            # 验证干球温度
             if not self.check_input(self.ui.lineEdit_3,"干球温度",self.temp_min,self.temp_max):
                 return
-            T = float(self.ui.lineEdit_3.text())
+            T_input = float(self.ui.lineEdit_3.text())
+            if self.temperature_unit == 'K':
+                T = T_input-273.15
+            elif self.temperature_unit == '℉':
+                T = (T_input-32)*5/9
+            else:
+                T = T_input
 
-            # 验证湿球/露点温度
             target_label = self.ui.label_2.text()
             if not self.check_input(self.ui.lineEdit,target_label,self.temp_min,self.temp_max):
                 return
-            T_other = float(self.ui.lineEdit.text())
+            T_other_input = float(self.ui.lineEdit.text())
+            if self.temperature_unit == 'K':
+                T_other = T_other_input-273.15
+            elif self.temperature_unit == '℉':
+                T_other = (T_other_input-32)*5/9
+            else:
+                T_other = T_other_input
 
-            # 验证压强
             if not self.check_input(self.ui.lineEdit_2,"大气压强",self.pressure_min,self.pressure_max):
                 return
-            P = float(self.ui.lineEdit_2.text())
+            P_input = float(self.ui.lineEdit_2.text())
+            if self.pressure_unit == 'Pa':
+                P = P_input/100
+            elif self.pressure_unit == 'mmHg':
+                P = P_input*1.33322
+            elif self.pressure_unit == 'cmHg':
+                P = P_input*13.3322
+            elif self.pressure_unit == 'bar':
+                P = P_input*1000
+            else:
+                P = P_input
 
             # 检查温度逻辑关系
             if T_other >= T:
@@ -448,14 +510,12 @@ class MainWindow(QObject):
             else:
                 initial_guess = None
 
-            # 执行计算...
             print("输入验证通过，执行计算...")
             if self.ui.radioButton_2.isChecked():  # 已知露点求湿球
                 self.calculator = calculate_wetbulb(initial_guess,T,T_other,P)
             else:  # 已知湿球求露点
                 self.calculator = calculate_dewpoint(T,T_other,P)
 
-                # 显示结果到左下角列表
             output = self.calculator.show_results("湿球" if self.ui.radioButton_2.isChecked() else "露点")
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
 
@@ -504,22 +564,36 @@ class UnitDialog:
             self.ui.radioButton_7: ('℃', -150, 200),
             self.ui.radioButton_8: ('℉', -238, 392)        # -150℃=-238℉, 200℃=392℉
         }
-        # 更新压强单位
+
+        for rb,(unit,_,_) in pressure_units.items():
+            if rb.isChecked():
+                self.main_window.pressure_unit = unit
+                break
+        for rb,(unit,_,_) in temperature_units.items():
+            if rb.isChecked():
+                self.main_window.temperature_unit = unit
+                break
+
         for rb,(unit,min_val,max_val) in pressure_units.items():
             if rb.isChecked():
                 self.main_window.pressure_min = min_val
                 self.main_window.pressure_max = max_val
-                self.main_window.ui.lineEdit_2.setPlaceholderText(f'{min_val}~{max_val}{unit}')
                 self.main_window.pressure_unit = unit
+                self.main_window.ui.lineEdit_2.setPlaceholderText(
+                    f"{min_val:.0f}~{max_val:.0f}{unit}"
+                )
                 break
-        # 更新温度单位
         for rb,(unit,min_val,max_val) in temperature_units.items():
             if rb.isChecked():
                 self.main_window.temp_min = min_val
                 self.main_window.temp_max = max_val
-                self.main_window.ui.lineEdit_3.setPlaceholderText(f'{min_val}~{max_val}{unit}')
-                self.main_window.ui.lineEdit.setPlaceholderText(f'{min_val}~{max_val}{unit} 且小于干球')
                 self.main_window.temperature_unit = unit
+                self.main_window.ui.lineEdit_3.setPlaceholderText(
+                    f"{min_val:.0f}~{max_val:.0f}{unit}"
+                )
+                self.main_window.ui.lineEdit.setPlaceholderText(
+                    f"{min_val:.0f}~{max_val:.0f}{unit} 且小于干球"
+                )
                 break
         self.ui.close()
 
