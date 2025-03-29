@@ -1,6 +1,6 @@
 import math
 import matplotlib.pyplot as plt
-from PySide2.QtWidgets import QApplication,QFileDialog
+from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtCore import QObject,QStringListModel
 # from PySide2.QtGui import QPixmap
@@ -310,6 +310,12 @@ class MainWindow(QObject):
         self.list_model_2 = QStringListModel()
         self.ui.listView.setModel(self.list_model)  # 绑定到左下角的 listView
         self.ui.listView_2.setModel(self.list_model_2)
+        self.ui.listView.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ui.listView_2.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ui.dial.setRange(2,10)
+        self.ui.dial.setValue(6)
+        self.ui.dial.setNotchesVisible(True)
+        self.ui.dial.setSingleStep(1)
         self.initial_guess_strategy = "Td"
         self.temperature_unit = '℃'
         self.pressure_unit = 'hPa'
@@ -334,12 +340,18 @@ class MainWindow(QObject):
         )
         # 迭代图按钮
         self.ui.pushButton.clicked.connect(self.show_convergence_plot)
+        # 精度旋钮
+        self.ui.dial.valueChanged.connect(self.update_ini)
         # 清空按钮
         self.ui.pushButton_2.clicked.connect(self.clearall)
         # 截屏按钮
         self.ui.pushButton_3.clicked.connect(self.take_screenshot)
         # 进一步计算
         self.ui.listView.clicked.connect(self.on_list_item_clicked)
+
+    def update_ini(self,value):
+        global tot
+        tot = 10**(-value)
 
     def on_list_item_clicked(self,index):
         row = index.row()
@@ -389,6 +401,7 @@ class MainWindow(QObject):
             dm = ro_vapor/ro_dry #含湿量
             dm1 = dm*1000
             han = 1.01*T_g+(2500+1.84*T_g)*dm
+            L_v = 2501-2.38*T_g-0.0016*T_g**2 # 蒸发潜热
 
             esd1 = self.prechange(esd)
             esw1 = self.prechange(esw)
@@ -400,14 +413,16 @@ class MainWindow(QObject):
             absolute_humidity = (esw*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
             specific_humidity = (0.62198*esw)/(P_hPa-0.37802*esw)*1000 if P_hPa > 0.37802*esw else 0 # 比湿 (g/kg)
 
-            # 虚温（使用干球温度和比湿）
             q = specific_humidity/1000  # 比湿转kg/kg
             virtual_temp_K = T_g_K*(1+0.6078*q)  # 精确系数0.6078
-            virtual_temp = self.tempchange(virtual_temp_K-273.15)  # 转用户单位
+            virtual_temp = self.tempchange(virtual_temp_K-273.15)# 虚温
 
-            # 位温（精确公式，使用干球温度）
             theta_K = T_g_K*(1000.0/P_hPa)**(Rd/Cp)
-            theta = self.tempchange(theta_K-273.15)  # 转用户单位
+            theta = self.tempchange(theta_K-273.15)# 位温
+            theta_e = theta_K*math.exp(L_v*q/(Cp*T_g_K))# 相当位温
+            theta_v = theta_K*(1+0.61*q)# 虚位温
+            theta_E = self.tempchange(theta_e-273.15)
+            theta_V = self.tempchange(theta_v-273.15)
 
             t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
             t_lcl = self.tempchange(1/t_lcl0-243.5)
@@ -425,14 +440,18 @@ class MainWindow(QObject):
                 f"干空气密度: {ro_dry:.3f} kg/m³",
                 f"水蒸气密度: {ro_vapor:.3f} kg/m³",
                 f"空气密度: {ro:.3f} kg/m³",
-                f"单位质量焓: {han:.2f} kJ/kg",
+                f"焓值: {han:.2f} kJ/kg",
+                f"蒸发潜热: {L_v:.1f} kJ/kg",
                 f"含湿量: {dm1:.3f} g/kg",
                 f"混合率: {mixing_ratio:.3f} g/kg",
                 f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
                 f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
                 f"位温: {theta:.2f} {self.temperature_unit}",
+                f"相当位温: {theta_E:.2f} {self.temperature_unit}",
+                f"虚位温: {theta_V:.2f} {self.temperature_unit}",
                 f"lcl温度: {t_lcl:.2f} {self.temperature_unit}",
-                f"lcl压强: {p_lcl:.1f} {self.pressure_unit}"
+                f"lcl压强: {p_lcl:.1f} {self.pressure_unit}",
+                f"露点蒸气压: {esd1:.2f} {self.pressure_unit}",
             ]
             self.list_model_2.setStringList(results)
 
@@ -594,9 +613,9 @@ class MainWindow(QObject):
                 initial_guess = None
 
             if self.ui.radioButton_2.isChecked():  # 已知露点求湿球
-                self.calculator = calculate_wetbulb(initial_guess,T,T_other,P)
+                self.calculator = calculate_wetbulb(initial_guess,T,T_other,P,tol=tot)
             else:  # 已知湿球求露点
-                self.calculator = calculate_dewpoint(T,T_other,P)
+                self.calculator = calculate_dewpoint(T,T_other,P,tol=tot)
 
             output = self.calculator.show_results("湿球" if self.ui.radioButton_2.isChecked() else "露点")
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
