@@ -1,8 +1,10 @@
-（选择按钮：选择是求露点还是求湿球）|（单位按钮：点击进入单位选择页面）
-（干球温度输入框）（湿球/露点温度输入框）（大气压强输入框）
-输出列表：（点击任意结果进入下一页面）
-Magnus-水面：26.4738°C
-……
-
-
-（注：单位换算、“下一页面”暂时都还未写）
+pyinstaller --noconsole --onefile `
+--upx-dir=C:\downloads\upx-5.0.0-win64 `
+--icon=app.ico `
+--add-data "calculator.ui;." `
+--add-data "err.ui;." `
+--add-data "单位.ui;." `
+--add-data "关于.ui;." `
+--add-data "app.ico;." `
+--add-data "err.ico;." `
+Temp_calculator.py
