@@ -1,6 +1,7 @@
 import math
 import sys
 import os
+import webbrowser
 import matplotlib.pyplot as plt
 from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
 from PySide2.QtUiTools import QUiLoader
@@ -82,9 +83,9 @@ class CalculatorMemory:
                     display_temp = result * 9/5 + 32
                 else:
                     display_temp = result
-                output += f"{item['method']}: {display_temp:.4f}{main_window.temperature_unit}   {rh:.2f}%\n"
+                output += f"{item['method']}:  {display_temp:.4f}{main_window.temperature_unit}  {rh:.2f}%\n"
             else:
-                output += f"{item['method']}: {result}\n"
+                output += f"{item['method']}:   {result}\n"
         return output
 
     def add_iteration(self,method,iteration,T_w,residual):
@@ -339,17 +340,18 @@ class MainWindow(QObject):
         self.ui.radioButton.toggled.connect(self.update_input_labels)
         # 计算按钮
         self.ui.lineEdit_2.returnPressed.connect(self.validate_and_calculate)
-        self.ui.lineEdit_2.returnPressed.connect(lambda:self.check_input(self.ui.lineEdit_2,"大气压强",*self.upp()))
+        self.ui.lineEdit_2.returnPressed.connect(lambda:self.list_model_2.setStringList([]))
+        self.ui.lineEdit_2.returnPressed.connect(lambda:self.check_input(self.ui.lineEdit_2,"大气压强"))
         # 单位切换
         self.ui.pushButton_5.clicked.connect(self.show_unit_dialog)
         # 关于按钮
         self.ui.pushButton_4.clicked.connect(self.show_about_dialog)
         # 转换焦点
         self.ui.lineEdit_3.returnPressed.connect(lambda:self.ui.lineEdit.setFocus())
-        self.ui.lineEdit_3.returnPressed.connect(lambda:self.check_input(self.ui.lineEdit_3,"干球温度",*self.upt()))
+        self.ui.lineEdit_3.returnPressed.connect(lambda:self.check_input(self.ui.lineEdit_3,"干球温度"))
         self.ui.lineEdit.returnPressed.connect(lambda:self.ui.lineEdit_2.setFocus())
         self.ui.lineEdit.returnPressed.connect(
-            lambda:self.check_input(self.ui.lineEdit,self.ui.label_2.text(),*self.upt())
+            lambda:self.check_input(self.ui.lineEdit,self.ui.label_2.text())
         )
         # 迭代图按钮
         self.ui.pushButton.clicked.connect(self.show_convergence_plot)
@@ -368,44 +370,38 @@ class MainWindow(QObject):
 
     def on_list_item_clicked(self,index):
         row = index.row()
-        item_text = self.list_model.data(index)
         self.list_model_2.setStringList([])
-
-        if row == 0 or any(s in item_text for s in ["不适用","失败","未收敛","错误"]):
+        if row <= 0 or row > len(self.calculator.methods):
+            return
+        method_data = self.calculator.methods[row-1]
+        method_name = method_data['method']
+        result = method_data['result']
+        rh = method_data['rh']
+        if not isinstance(result,float):
             return
 
         try:
-            parts = item_text.split(":")
-            if len(parts) < 2: return
-            method_part,data_part = parts[0].strip(),parts[1].strip()
-            data_values = data_part.split()
-            if len(data_values) < 2: return
-
-            temp_str,rh_str = data_values[0],data_values[1]
-            displayed_temp = float(temp_str.replace(self.temperature_unit,""))
-            rh = float(rh_str.replace("%",""))/100  # 相对湿度转小数
-
             T_g_input = float(self.ui.lineEdit_3.text())
             T_g = self.changetemp(T_g_input)
             T_g_K = T_g+273.15
 
             if "露点" in self.ui.label_2.text():
-                Td = self.changetemp(displayed_temp)
+                Td = result
                 Tw = self.changetemp(float(self.ui.lineEdit.text()))
             else:
-                Tw = self.changetemp(displayed_temp)
+                Tw = result
                 Td = self.changetemp(float(self.ui.lineEdit.text()))
 
             P_input = float(self.ui.lineEdit_2.text())
             P_hPa = self.changepre(P_input)
 
-            Rv = 461.5  # 水汽气体常数
+            Rv = 461.5  # 水汽气体常数(也可以是461）
             Rd = 287.04  # 干空气（精确至小数点后两位）
             Cp = 1004.75  # 定压比热容（精确值）
 
-            esd = calculate_esat(Td,method_part)
-            esw = calculate_esat(Tw,method_part)
-            e = calculate_esat(T_g,method_part)
+            esd = calculate_esat(Td,method_name)
+            esw = calculate_esat(Tw,method_name)
+            e = calculate_esat(T_g,method_name)
             P_dry = P_hPa-esw
 
             ro_dry = P_dry*100/(Rd*T_g_K)
@@ -443,10 +439,10 @@ class MainWindow(QObject):
             p_lcl = self.prechange(p_lcl0)
 
             results = [
-                f"{method_part} | 常用气象参数",
+                f"{method_name} | 常用气象参数",
                 f"相对湿度: {rh*100:.2f}%",
-                f"绝对湿度: {absolute_humidity:.2f} g/m³",
-                f"比湿: {specific_humidity:.4f} g/kg",
+                f"绝对湿度: {absolute_humidity:.3f} g/m³",
+                f"比湿: {specific_humidity:.3f} g/kg",
                 f"蒸气压: {esw1:.2f} {self.pressure_unit}",
                 f"饱和蒸气压: {e1:.2f} {self.pressure_unit}",
                 f"干空气分压: {P_dry1:.1f} {self.pressure_unit}",
@@ -458,9 +454,9 @@ class MainWindow(QObject):
                 f"含湿量: {dm1:.3f} g/kg",
                 f"混合率: {mixing_ratio:.3f} g/kg",
                 f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
-                f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
+                f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
                 f"虚位温: {theta_V:.2f} {self.temperature_unit}",
                 f"lcl温度: {t_lcl:.2f} {self.temperature_unit}",
                 f"lcl压强: {p_lcl:.1f} {self.pressure_unit}",
@@ -490,12 +486,6 @@ class MainWindow(QObject):
                 print(f"截图已保存至：{file_path}")
             except Exception as e:
                 self.show_error_dialog(f"保存失败：{str(e)}")
-
-    def upp(self):
-        return self.pressure_min,self.pressure_max
-
-    def upt(self):
-        return self.temp_min,self.temp_max
 
     def changepre(self,P):
         if self.pressure_unit == 'hPa':
@@ -562,7 +552,7 @@ class MainWindow(QObject):
         else:
             self.show_error_dialog("请先执行计算！")
 
-    def check_input(self,line_edit,field_name,min_C,max_C):
+    def check_input(self,line_edit,field_name):
         text = line_edit.text().strip()
         if not text:
             self.show_error_dialog(f"{field_name}不能为空！")
@@ -574,11 +564,11 @@ class MainWindow(QObject):
 
             if "温度" in field_name:
                 value_C = self.changetemp(value)
-                if value_C < min_C or value_C > max_C:
-                    min_ui = self.tempchange(min_C)
-                    max_ui = self.tempchange(max_C)
+                if value_C < -150 or value_C > 200:
+                    min_ui = self.tempchange(-150)
+                    max_ui = self.tempchange(200)
                     self.show_error_dialog(
-                        f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.temperature_unit} 范围内")
+                        f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.temperature_unit} 范围内")
                     line_edit.clear()
                     return False
             elif "压强" in field_name:
@@ -586,7 +576,7 @@ class MainWindow(QObject):
                 if value_hPa < 500 or value_hPa > 1100:
                     min_ui = self.prechange(500)
                     max_ui = self.prechange(1100)
-                    self.show_error_dialog(f"{field_name}需在 [{min_ui:.1f}, {max_ui:.1f}]{self.pressure_unit} 范围内")
+                    self.show_error_dialog(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
                     line_edit.clear()
                     return False
 
@@ -598,16 +588,16 @@ class MainWindow(QObject):
 
     def validate_and_calculate(self):
         try:
-            if not self.check_input(self.ui.lineEdit_3,"干球温度",self.temp_min,self.temp_max):
+            if not self.check_input(self.ui.lineEdit_3,"干球温度"):
                 return
             T_input = float(self.ui.lineEdit_3.text())
             T = self.changetemp(T_input)
-            target_label = self.ui.label_2.text()
-            if not self.check_input(self.ui.lineEdit,target_label,self.temp_min,self.temp_max):
+            target_label = self.ui.label_2.text().replace(' ','').rstrip("：")
+            if not self.check_input(self.ui.lineEdit,target_label):
                 return
             T_other_input = float(self.ui.lineEdit.text())
             T_other = self.changetemp(T_other_input)
-            if not self.check_input(self.ui.lineEdit_2,"大气压强",self.pressure_min,self.pressure_max):
+            if not self.check_input(self.ui.lineEdit_2,"大气压强"):
                 return
             P_input = float(self.ui.lineEdit_2.text())
             P = self.changepre(P_input)
@@ -638,7 +628,7 @@ class MainWindow(QObject):
 
     def show_error_dialog(self,message):
         error_dialog = QUiLoader().load(resource_path('err.ui'))
-        error_dialog.setWindowIcon(QIcon(resource_path('app.ico')))
+        error_dialog.setWindowIcon(QIcon(resource_path('err.ico')))
         error_dialog.textBrowser.setPlainText(message)
         error_dialog.pushButton.clicked.connect(error_dialog.close)
         error_dialog.exec_()
@@ -656,6 +646,7 @@ class AboutDialog:
         self.ui = QUiLoader().load(resource_path('关于.ui'))
         self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.ui.pushButton.clicked.connect(self.ui.close)
+        self.ui.pushButton_2.clicked.connect(lambda: webbrowser.open("https://github.com/x1shang/Wetbulb-Calculator"))
 
 class UnitDialog:
     def __init__(self,main_window):
@@ -676,7 +667,7 @@ class UnitDialog:
         }
         # 温度单位映射
         temperature_units = {
-            self.ui.radioButton_6: ('K', 125, 473),  # -150℃=123.15K, 200℃=473.15K
+            self.ui.radioButton_6: ('K', 123.15, 473.15),  # -150℃=123.15K, 200℃=473.15K
             self.ui.radioButton_7: ('℃', -150, 200),
             self.ui.radioButton_8: ('℉', -238, 392)        # -150℃=-238℉, 200℃=392℉
         }
@@ -696,7 +687,7 @@ class UnitDialog:
                 self.main_window.pressure_max = max_val
                 self.main_window.pressure_unit = unit
                 self.main_window.ui.lineEdit_2.setPlaceholderText(
-                    f"{min_val:.0f}~{max_val:.0f}{unit}"
+                    f"{min_val}~{max_val}{unit}"
                 )
                 break
         for rb,(unit,min_val,max_val) in temperature_units.items():
@@ -705,10 +696,10 @@ class UnitDialog:
                 self.main_window.temp_max = max_val
                 self.main_window.temperature_unit = unit
                 self.main_window.ui.lineEdit_3.setPlaceholderText(
-                    f"{min_val:.0f}~{max_val:.0f}{unit}"
+                    f"{min_val}~{max_val}{unit}"
                 )
                 self.main_window.ui.lineEdit.setPlaceholderText(
-                    f"{min_val:.0f}~{max_val:.0f}{unit} 且小于干球"
+                    f"{min_val}~{max_val:}{unit} 且小于干球"
                 )
                 break
         self.ui.close()

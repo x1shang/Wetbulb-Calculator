@@ -25,7 +25,7 @@
         </size>
        </property>
        <property name="text">
-        <string>湿球计算器（version1.0.1)</string>
+        <string>湿球计算器（version1.1.0)</string>
        </property>
       </widget>
      </item>
@@ -130,16 +130,23 @@
        </property>
        <property name="sizeHint" stdset="0">
         <size>
-         <width>168</width>
+         <width>40</width>
          <height>20</height>
         </size>
        </property>
       </spacer>
      </item>
      <item>
+      <widget class="QPushButton" name="pushButton_2">
+       <property name="text">
+        <string>给star</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="pushButton">
        <property name="text">
-        <string>OK</string>
+        <string>朕知道了</string>
        </property>
       </widget>
      </item>

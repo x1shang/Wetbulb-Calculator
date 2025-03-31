@@ -125,14 +125,14 @@
        <item>
         <widget class="QPushButton" name="pushButton_4">
          <property name="text">
-          <string>关于…</string>
+          <string>关于软件</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="pushButton_5">
          <property name="text">
-          <string>更换单位</string>
+          <string>设置</string>
          </property>
         </widget>
        </item>
