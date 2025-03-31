@@ -10,6 +10,12 @@
     <height>571</height>
    </rect>
   </property>
+  <property name="minimumSize">
+   <size>
+    <width>573</width>
+    <height>571</height>
+   </size>
+  </property>
   <property name="windowTitle">
    <string>湿球计算器</string>
   </property>
