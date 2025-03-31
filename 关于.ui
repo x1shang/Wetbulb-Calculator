@@ -25,7 +25,7 @@
         </size>
        </property>
        <property name="text">
-        <string>湿球计算器（version1.1.0)</string>
+        <string>湿球计算器（version1.1.1)</string>
        </property>
       </widget>
      </item>

@@ -5,8 +5,17 @@ import webbrowser
 import matplotlib.pyplot as plt
 from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
 from PySide2.QtUiTools import QUiLoader
-from PySide2.QtCore import QObject,QStringListModel
+from PySide2.QtCore import Qt,QObject,QStringListModel
 from PySide2.QtGui import QIcon
+
+# 在创建 QApplication 前设置环境变量
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"  # 避免缩放倍数取整
+
+# 创建应用实例
+app = QApplication(sys.argv)
+app.setAttribute(Qt.AA_EnableHighDpiScaling)  # 启用高 DPI 缩放
+app.setAttribute(Qt.AA_UseHighDpiPixmaps)     # 支持高 DPI 图标
 
 def resource_path(relative_path):
     """ 动态获取资源文件的绝对路径，兼容开发环境和打包后的EXE """
@@ -310,6 +319,7 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
 class MainWindow(QObject):
     def __init__(self):
         super().__init__()
+        app.setWindowIcon(QIcon(resource_path('app.ico')))
         self.ui = QUiLoader().load(resource_path('calculator.ui'))
         self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.bind_events()
@@ -705,7 +715,6 @@ class UnitDialog:
         self.ui.close()
 
 if __name__ == '__main__':
-    app = QApplication([])
     main_window = MainWindow()
     main_window.ui.show()
-    app.exec_()
+    sys.exit(app.exec_())
