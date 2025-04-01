@@ -405,9 +405,15 @@ class MainWindow(QObject):
             P_input = float(self.ui.lineEdit_2.text())
             P_hPa = self.changepre(P_input)
 
-            Rv = 461.5  # 水汽气体常数(也可以是461）
-            Rd = 287.04  # 干空气（精确至小数点后两位）
-            Cp = 1004.75  # 定压比热容（精确值）
+            R = 8.314462618
+            Mv = 18.01528
+            Md = 28.9647
+            Rv = 1000*R/Mv  # 水汽气体常数
+            Rd = 1000*R/Md  # 干空气
+            Cp = 1004.7463+0.05*T_g  # 定压比热容（精确值）
+            Cpw = 1864 # 水的定压比热容
+            ups = Mv/Md
+            upsilon = (1-ups)/ups
 
             esd = calculate_esat(Td,method_name)
             esw = calculate_esat(Tw,method_name)
@@ -417,35 +423,34 @@ class MainWindow(QObject):
             ro_dry = P_dry*100/(Rd*T_g_K)
             ro_vapor = esw*100/(Rv*T_g_K)
             ro = ro_dry+ro_vapor
-            dm = ro_vapor/ro_dry #含湿量
+            dm = ro_vapor/ro_dry #含湿量就是混合率
             dm1 = dm*1000
-            han = 1.01*T_g+(2500+1.84*T_g)*dm
-            L_v = 2501-2.38*T_g-0.0016*T_g**2 # 蒸发潜热
+            L_v = 2500.8-2.3665*T_g-0.0023*T_g**2+1.87e-5*T_g**3-4.2e-8*T_g**4 # 蒸发潜热
+            han = Cp/1000*T_g+(L_v+Cpw/1000*T_g)*dm
 
             esd1 = self.prechange(esd)
             esw1 = self.prechange(esw)
             e1 = self.prechange(e)
             P_dry1 = self.prechange(P_dry)
 
-            sat_mixing_ratio = 0.62198*(e/(P_hPa-e))*1000 if P_hPa > e else 0 # 饱和混合率 (g/kg)
-            mixing_ratio = 0.62198*(esw/(P_hPa-esw))*1000 if P_hPa > esw else 0   # 混合率 (g/kg)
+            sat_mixing_ratio = ups*(e/(P_hPa-e))*1000 if P_hPa > e else 0 # 饱和混合率 (g/kg)
             absolute_humidity = (esw*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
-            specific_humidity = (0.62198*esw)/(P_hPa-0.37802*esw)*1000 if P_hPa > 0.37802*esw else 0 # 比湿 (g/kg)
+            specific_humidity = (ups*esw)/(P_hPa-(1-ups)*esw)*1000 if P_hPa > (1-ups)*esw else 0 # 比湿 (g/kg)
 
             q = specific_humidity/1000  # 比湿转kg/kg
-            virtual_temp_K = T_g_K*(1+0.6078*q)  # 精确系数0.6078
+            virtual_temp_K = T_g_K*(1+upsilon*q)  # 精确系数0.6078
             virtual_temp = self.tempchange(virtual_temp_K-273.15)# 虚温
 
-            theta_K = T_g_K*(1000.0/P_hPa)**(Rd/Cp)
-            theta = self.tempchange(theta_K-273.15)# 位温
-            theta_e = theta_K*math.exp(L_v*q/(Cp*T_g_K))# 相当位温
-            theta_v = theta_K*(1+0.61*q)# 虚位温
+            theta_K = T_g_K*(1000/P_hPa)**(Rd/Cp)
+            theta = self.tempchange(theta_K-273.15)# 位温THTA
+            theta_e = theta_K*math.exp(L_v*q/(Cp*T_g_K))# 相当位温THTE
+            theta_v = theta_K*(1+upsilon*q)# 虚位温THTV
             theta_E = self.tempchange(theta_e-273.15)
             theta_V = self.tempchange(theta_v-273.15)
 
             t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
             t_lcl = self.tempchange(1/t_lcl0-243.5)
-            p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.8))
+            p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
             p_lcl = self.prechange(p_lcl0)
 
             results = [
@@ -462,7 +467,6 @@ class MainWindow(QObject):
                 f"焓值: {han:.2f} kJ/kg",
                 f"蒸发潜热: {L_v:.1f} kJ/kg",
                 f"含湿量: {dm1:.3f} g/kg",
-                f"混合率: {mixing_ratio:.3f} g/kg",
                 f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
