@@ -95,6 +95,7 @@ class CalculatorMemory:
                 output += f"{item['method']}:  {display_temp:.4f}{main_window.temperature_unit}  {rh:.2f}%\n"
             else:
                 output += f"{item['method']}:   {result}\n"
+        output += "点击任意行以继续…"
         return output
 
     def add_iteration(self,method,iteration,T_w,residual):
@@ -347,8 +348,11 @@ class MainWindow(QObject):
     def bind_events(self):
         # 模式切换
         self.ui.radioButton_2.toggled.connect(self.update_input_labels)
+        self.ui.radioButton_2.toggled.connect(self.clearall)
         self.ui.radioButton.toggled.connect(self.update_input_labels)
+        self.ui.radioButton.toggled.connect(self.clearall)
         # 计算按钮
+        self.ui.pushButton_6.clicked.connect(self.validate_and_calculate)
         self.ui.lineEdit_2.returnPressed.connect(self.validate_and_calculate)
         self.ui.lineEdit_2.returnPressed.connect(lambda:self.list_model_2.setStringList([]))
         self.ui.lineEdit_2.returnPressed.connect(lambda:self.check_input(self.ui.lineEdit_2,"大气压强"))
