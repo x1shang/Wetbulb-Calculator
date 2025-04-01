@@ -664,6 +664,7 @@ class UnitDialog:
         self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.main_window = main_window
         self.ui.pushButton.clicked.connect(self.update_units)
+        self.ui.pushButton.clicked.connect(lambda:self.main_window.clearall())
         self.ui.pushButton_2.clicked.connect(self.ui.close)
 
     def update_units(self):
