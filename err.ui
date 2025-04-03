@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>279</width>
-    <height>179</height>
+    <height>162</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -35,7 +35,15 @@
     </widget>
    </item>
    <item>
-    <widget class="QTextBrowser" name="textBrowser"/>
+    <widget class="QTextBrowser" name="textBrowser">
+     <property name="styleSheet">
+      <string notr="true">#textBrowser {
+        background: #f0f0f0;
+        border: 1px solid transparent;
+        border-radius: 5px;
+    }</string>
+     </property>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">

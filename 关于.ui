@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>310</width>
-    <height>263</height>
+    <width>322</width>
+    <height>289</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,7 +25,7 @@
         </size>
        </property>
        <property name="text">
-        <string>湿球计算器（version1.1.2)</string>
+        <string>湿球计算器（version1.1.3)</string>
        </property>
       </widget>
      </item>
@@ -38,7 +38,14 @@
         </size>
        </property>
        <property name="text">
-        <string>降水相态研究性学习小组 制作</string>
+        <string>RDFZ降水相态研究性学习小组</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_9">
+       <property name="text">
+        <string>朱嘉赫 王一博 刘思毅 制作</string>
        </property>
       </widget>
      </item>
@@ -91,18 +98,45 @@
     </widget>
    </item>
    <item>
-    <layout class="QVBoxLayout" name="verticalLayout_3">
+    <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QLabel" name="label_7">
-       <property name="text">
-        <string>联系我们！</string>
-       </property>
-      </widget>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <item>
+        <widget class="QLabel" name="label_7">
+         <property name="text">
+          <string>联系我们！</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="label_8">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>16</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Github@x1shang</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
      <item>
-      <widget class="QLabel" name="label_8">
-       <property name="text">
-        <string>Github@x1shang</string>
+      <widget class="QTextBrowser" name="textBrowser">
+       <property name="maximumSize">
+        <size>
+         <width>181</width>
+         <height>41</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#textBrowser {
+        background: #f0f0f0;
+        border: 1px solid transparent;
+        border-radius: 5px;
+    }</string>
        </property>
       </widget>
      </item>
@@ -116,15 +150,15 @@
      <property name="sizeHint" stdset="0">
       <size>
        <width>20</width>
-       <height>0</height>
+       <height>2</height>
       </size>
      </property>
     </spacer>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <spacer name="horizontalSpacer">
+      <spacer name="horizontalSpacer_2">
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
        </property>
@@ -138,8 +172,45 @@
      </item>
      <item>
       <widget class="QPushButton" name="pushButton_2">
+       <property name="minimumSize">
+        <size>
+         <width>91</width>
+         <height>25</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#pushButton_2 {
+    background: rgba(247, 215, 32, 0.8); 
+    color: rgb(0, 0, 0);  
+    font-weight: bold;   /* 加粗效果 */
+    border-radius: 4px;
+}
+#pushButton_2:pressed {
+    background: rgb(255, 255, 99);
+    border-radius: 4px;
+}</string>
+       </property>
        <property name="text">
         <string>给star</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="pushButton_3">
+       <property name="minimumSize">
+        <size>
+         <width>93</width>
+         <height>28</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>93</width>
+         <height>28</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>检查更新</string>
        </property>
       </widget>
      </item>

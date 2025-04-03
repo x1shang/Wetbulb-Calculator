@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>304</width>
+    <width>258</width>
     <height>234</height>
    </rect>
   </property>
@@ -17,7 +17,7 @@
    <item>
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>请选择单位……</string>
+      <string>设置单位…</string>
      </property>
     </widget>
    </item>
@@ -167,6 +167,20 @@
      </item>
      <item>
       <widget class="QPushButton" name="pushButton">
+       <property name="minimumSize">
+        <size>
+         <width>91</width>
+         <height>25</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#pushButton {
+    background: rgb(33, 170, 65); 
+    color: rgb(255, 255, 255);         /* 文本颜色 */
+    font-weight: bold;   /* 加粗效果 */
+    border-radius: 4px;
+}</string>
+       </property>
        <property name="text">
         <string>确定</string>
        </property>
@@ -174,6 +188,12 @@
      </item>
      <item>
       <widget class="QPushButton" name="pushButton_2">
+       <property name="minimumSize">
+        <size>
+         <width>93</width>
+         <height>28</height>
+        </size>
+       </property>
        <property name="text">
         <string>取消</string>
        </property>
