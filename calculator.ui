@@ -136,6 +136,18 @@
              <height>91</height>
             </size>
            </property>
+           <property name="styleSheet">
+            <string notr="true">#pushButton_6 {
+    background: rgba(29, 127, 57, 0.9); 
+    color: rgb(255, 255, 255);         /* 文本颜色 */
+    font-weight: bold;   /* 加粗效果 */
+    border-radius: 6px; 
+}
+#pushButton_6:pressed { 
+    background-color: rgb(0, 85, 0);
+    border-radius: 6px;
+}</string>
+           </property>
            <property name="text">
             <string>计
 算</string>
@@ -249,7 +261,15 @@
         </widget>
        </item>
        <item>
-        <widget class="QListView" name="listView"/>
+        <widget class="QListView" name="listView">
+         <property name="styleSheet">
+          <string notr="true">#listView {
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }</string>
+         </property>
+        </widget>
        </item>
       </layout>
      </item>
@@ -286,9 +306,12 @@
           <widget class="QDial" name="dial">
            <property name="minimumSize">
             <size>
-             <width>113</width>
-             <height>111</height>
+             <width>129</width>
+             <height>100</height>
             </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true"/>
            </property>
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -304,6 +327,13 @@
            <width>217</width>
            <height>152</height>
           </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">#listView_2 {
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }</string>
          </property>
         </widget>
        </item>

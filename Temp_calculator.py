@@ -1,12 +1,36 @@
 import math
 import sys
 import os
+import requests
+import json
 import webbrowser
 import matplotlib.pyplot as plt
 from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtCore import Qt,QObject,QStringListModel
 from PySide2.QtGui import QIcon
+'''
+# 在创建QApplication前设置高DPI策略（关键步骤）
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
+
+# 创建应用实例
+app = QApplication(sys.argv)
+app.setAttribute(Qt.AA_UseHighDpiPixmaps)  # 仅保留必要的高DPI属性
+'''
+def get_latest_release():
+    try:
+        url = f"https://api.github.com/repos/x1shang/Wetbulb-Calculator/releases/latest"
+        response = requests.get(url, timeout=5)  # 添加超时参数
+        if response.status_code == 200:
+            return json.loads(response.text)
+        else:
+            return None
+    except Exception as e:
+        print(f"获取最新版本失败: {str(e)}")
+        return None
+
+tag = "v1.1.2"
 
 def resource_path(relative_path):
     """ 动态获取资源文件的绝对路径，兼容开发环境和打包后的EXE """
@@ -335,6 +359,13 @@ class MainWindow(QObject):
         self.initial_guess_strategy = "Td"
         self.temperature_unit = '℃'
         self.pressure_unit = 'hPa'
+        '''
+        base_width = 573
+        base_height = 573
+        self.ui.setGeometry(100,100,base_width,base_height)
+        self.ui.setMinimumSize(base_width,base_height)
+        '''
+
 
     def bind_events(self):
         # 模式切换
@@ -360,6 +391,8 @@ class MainWindow(QObject):
         )
         # 迭代图按钮
         self.ui.pushButton.clicked.connect(self.show_convergence_plot)
+        self.ui.radioButton_3.toggled.connect(self.clearall)
+        self.ui.radioButton_4.toggled.connect(self.clearall)
         # 精度旋钮
         self.ui.dial.valueChanged.connect(self.update_ini)
         # 清空按钮
@@ -656,6 +689,28 @@ class AboutDialog:
         self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
         self.ui.pushButton.clicked.connect(self.ui.close)
         self.ui.pushButton_2.clicked.connect(lambda: webbrowser.open("https://github.com/x1shang/Wetbulb-Calculator"))
+        self.ui.pushButton_3.clicked.connect(self.check_for_updates)
+
+    def check_for_updates(self):
+        try:
+            latest_release = get_latest_release()
+            if latest_release:
+                latest_tag = latest_release.get('tag_name','')
+                if latest_tag and latest_tag != tag:
+                    self.ui.textBrowser.setPlainText(f"检测到新版本\n{latest_tag}")
+                    self.shownew()
+                else:
+                    self.ui.textBrowser.setPlainText("已是最新版本")
+            else:
+                self.ui.textBrowser.setPlainText("网络未连接")
+        except Exception as e:
+            self.ui.textBrowser.setPlainText(f"检查更新失败: {str(e)}")
+
+    def shownew(self):
+        new_dialog = QUiLoader().load(resource_path('new.ui'))
+        new_dialog.setWindowIcon(QIcon(resource_path('err.ico')))
+        new_dialog.commandLinkButton.clicked.connect(lambda: webbrowser.open("https://github.com/x1shang/Wetbulb-Calculator"))
+        new_dialog.exec_()
 
 class UnitDialog:
     def __init__(self,main_window):
@@ -718,4 +773,5 @@ if __name__ == '__main__':
     app = QApplication([])
     main_window = MainWindow()
     main_window.ui.show()
+    # sys.exit(app.exec_())
     app.exec_()
