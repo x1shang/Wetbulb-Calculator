@@ -32,7 +32,7 @@ def get_latest_release():
         print(f"获取最新版本失败: {str(e)}")
         return None
 
-tag = "v1.1.3"
+tag = "v1.2.0pre1"
 
 def resource_path(relative_path):
     """ 动态获取资源文件的绝对路径，兼容开发环境和打包后的EXE """
