@@ -157,6 +157,43 @@
            </property>
           </widget>
          </item>
+         <item>
+          <widget class="QPushButton" name="pushButton_7">
+           <property name="minimumSize">
+            <size>
+             <width>31</width>
+             <height>81</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>31</width>
+             <height>91</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">#pushButton_7 {
+    background: rgba(84, 62, 194, 0.9); 
+    color: rgb(255, 255, 255);         /* 文本颜色 */
+    font-weight: bold;   /* 加粗效果 */
+    border-radius: 6px; 
+}
+#pushButton_7:pressed { 
+    background-color:rgb(71, 35, 124);
+    border-radius: 6px;
+}</string>
+           </property>
+           <property name="text">
+            <string>批
+量
+计
+算</string>
+           </property>
+           <property name="checkable">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
       </layout>

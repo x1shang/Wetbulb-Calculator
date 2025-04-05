@@ -4,12 +4,14 @@ import os
 import requests
 import json
 import webbrowser
+import openpyxl
 import matplotlib.pyplot as plt
-from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView
+import pandas as pd
+from PySide2.QtWidgets import QApplication,QFileDialog,QAbstractItemView,QComboBox
 from PySide2.QtUiTools import QUiLoader
 from PySide2.QtCore import Qt,QObject,QStringListModel
 from PySide2.QtGui import QIcon
-'''
+
 # 在创建QApplication前设置高DPI策略（关键步骤）
 os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
@@ -17,7 +19,7 @@ os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
 # 创建应用实例
 app = QApplication(sys.argv)
 app.setAttribute(Qt.AA_UseHighDpiPixmaps)  # 仅保留必要的高DPI属性
-'''
+
 def get_latest_release():
     try:
         url = f"https://api.github.com/repos/x1shang/Wetbulb-Calculator/releases/latest"
@@ -30,7 +32,7 @@ def get_latest_release():
         print(f"获取最新版本失败: {str(e)}")
         return None
 
-tag = "v1.1.2"
+tag = "v1.1.3"
 
 def resource_path(relative_path):
     """ 动态获取资源文件的绝对路径，兼容开发环境和打包后的EXE """
@@ -338,6 +340,7 @@ class MainWindow(QObject):
         app.setWindowIcon(QIcon(resource_path('app.ico')))
         self.ui = QUiLoader().load(resource_path('calculator.ui'))
         self.ui.setWindowIcon(QIcon(resource_path('app.ico')))
+        
         self.bind_events()
         self.update_input_labels()
         self.ui.widget_iteration.setVisible(True)
@@ -359,15 +362,14 @@ class MainWindow(QObject):
         self.initial_guess_strategy = "Td"
         self.temperature_unit = '℃'
         self.pressure_unit = 'hPa'
-        '''
         base_width = 573
         base_height = 573
         self.ui.setGeometry(100,100,base_width,base_height)
         self.ui.setMinimumSize(base_width,base_height)
-        '''
-
 
     def bind_events(self):
+        # 批量计算
+        self.ui.pushButton_7.clicked.connect(self.process_excel_file)
         # 模式切换
         self.ui.radioButton_2.toggled.connect(self.update_input_labels)
         self.ui.radioButton_2.toggled.connect(self.clearall)
@@ -683,6 +685,64 @@ class MainWindow(QObject):
         about_dialog = AboutDialog()
         about_dialog.ui.exec_()
 
+    def process_excel_file(self):
+        try:
+            hint = [
+            "请善用批量计算功能！现在它：",
+            "1，只支持goff公式默认单位计算湿球",
+            "2，不支持输入验证功能\n",
+            "关于具体如何使用，详见readme.txt"
+        ]
+            self.list_model_2.setStringList(hint)
+
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            xlsx_files = [fi for fi in os.listdir(current_dir) if fi.endswith('.xlsx')]
+            
+            if not xlsx_files:
+                self.show_error_dialog("当前目录下没有找到.xlsx文件！")
+                return
+                
+            # 读取第一个xlsx文件
+            file_path = os.path.join(current_dir, xlsx_files[0])
+            df = pd.read_excel(file_path)
+
+            if 'A' not in df.columns or 'B' not in df.columns or 'C' not in df.columns:
+                self.show_error_dialog("Excel文件必须包含ABC列！")
+                return
+
+            wet_bulb_temps = []
+
+            for index, row in df.iterrows():
+                try:
+                    T = float(row['A'])
+                    Td = float(row['B'])
+                    P = float(row['C'])
+                    if T >= 0:
+                        method = 'Goff-水面'
+                    else:
+                        method = 'Goff-冰面'
+                    calculator = calculate_wetbulb(Td, T, Td, P)
+                    for result in calculator.methods:
+                        if result['method'] == method and isinstance(result['result'], float):
+                            wet_bulb_temps.append(result['result'])
+                            break
+                    else:
+                        wet_bulb_temps.append(None)
+                        
+                except (ValueError, TypeError):
+                    wet_bulb_temps.append(None)
+
+            df['D'] = wet_bulb_temps
+            
+            # 保存结果
+            output_path = os.path.join(current_dir, f"result_{xlsx_files[0]}")
+            df.to_excel(output_path, index=False)
+
+            self.show_error_dialog(f"处理完成！结果已保存为：{output_path}")
+
+        except Exception as e:
+            self.show_error_dialog(f"处理Excel文件时出错：{str(e)}")
+
 class AboutDialog:
     def __init__(self):
         self.ui = QUiLoader().load(resource_path('关于.ui'))
@@ -770,8 +830,8 @@ class UnitDialog:
         self.ui.close()
 
 if __name__ == '__main__':
-    app = QApplication([])
+    #app = QApplication([])
     main_window = MainWindow()
     main_window.ui.show()
-    # sys.exit(app.exec_())
-    app.exec_()
+    sys.exit(app.exec_())
+    #app.exec_()
