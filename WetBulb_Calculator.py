@@ -1,22 +1,21 @@
 import sys
 import os
 import math
+import time
+import random
 import webbrowser
-import requests
-import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import openpyxl  # 添加Excel支持
 from PySide2.QtCore import QStringListModel, Qt
 from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton
 from PySide2.QtGui import QIcon
-from qfluentwidgets import ColorPickerButton, setTheme, Theme
 from calculator1 import Ui_wetbulb
 from 单位 import Ui_Dia
 from 关于 import Ui_Dialog
 
 tag = "v1.2.0"
-tot = 1e-6  # 添加全局精度变量
+tot = 1e-7  # 添加全局精度变量
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
@@ -189,7 +188,7 @@ def calculate_wetbulb(initial_guess,T,Td,P=1013.25,max_iter=50,tol=1e-6):
                 if abs(T_w_new-T_w) < tol and not iter_num < 4:
                     last_rh = e/calculate_esat(T,name)
                     if 1 >= last_rh >= 0:
-                        calculator.add_result(name,T_w_new,last_rh)
+                        calculator.add_result(name,T_w_new,rh=last_rh)
                         break
                     else:
                         calculator.add_result(name,"结果不符常理")
@@ -233,12 +232,68 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
         else:
             try:
                 Td = esat_calculate(e,name,max_iter,tol)
-                calculator.add_result(name,Td,rh)
+                calculator.add_result(name,Td,rh=rh)
             except ZeroDivisionError:
                 Td = T_g
-                calculator.add_result(name,Td,rh)
+                calculator.add_result(name,Td,rh=rh)
             except:
                 calculator.add_result(name,"计算失败")
+    return calculator
+
+def calculate_both(T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
+    calculator = CalculatorMemory()
+    
+    # 将百分比转换为小数
+    rh_decimal = rh / 100
+    
+    for name, condition in methods:
+        if not condition(T_g):
+            calculator.add_result(name, 'T_g超出适用范围', '不适用')
+            continue
+            
+        try:
+            # 1. 计算饱和蒸气压
+            es_dry = calculate_esat(T_g, name)
+            # 2. 计算实际蒸气压
+            e = es_dry * rh_decimal
+            # 3. 计算露点温度Td
+            Td = esat_calculate(e, name, max_iter, tol)
+            
+            # 4. 获取初始猜测值
+            if T_g >= 0:
+                initial_guess = T_g - 5
+            else:
+                initial_guess = T_g - 2
+                
+            # 5. 计算湿球温度Tw
+            T_w = initial_guess
+            for iter_num in range(max_iter):
+                e_sat = calculate_esat(T_w, name)
+                gamma = 0.000667 * (1 + 0.00115 * T_w) * P
+                f = e_sat - gamma * (T_g - T_w) - e
+                de_dT = calculate_dedt(T_w, name, P)
+                df_dT = de_dT + gamma - 0.000667 * 0.00115 * P * (T_g - T_w)
+                T_w_new = T_w - f / df_dT
+                calculator.add_iteration(name, iter_num+1, T_w, abs(f))
+                
+                if abs(T_w_new - T_w) < tol and not iter_num < 4:
+                    calculator.add_result(name, Td, T_w_new)
+                    break
+                elif abs(f) > 1e3:
+                    calculator.add_result(name, "露点计算成功，湿球残差过大", "计算失败")
+                    break
+                    
+                T_w = T_w_new
+            else:
+                calculator.add_result(name, Td, '湿球未收敛')
+                
+        except OverflowError:
+            calculator.add_result(name, '数值溢出', '计算失败')
+        except Exception as e:
+            calculator.add_result(name, f'错误: {str(e)}', '计算失败')
+        except:
+            calculator.add_result(name, '计算失败', '计算失败')
+            
     return calculator
 
 class CalculatorMemory:
@@ -246,28 +301,61 @@ class CalculatorMemory:
         self.methods = []
         self.iteration_data = {}
 
-    def add_result(self,method_name,result,rh=None):
+    def add_result(self, method_name, result1, result2=None, rh=None):
         self.methods.append({
-            "method":method_name,
-            "result":result,
-            "rh":rh
+            "method": method_name,
+            "result1": result1,
+            "result2": result2,
+            "rh": rh
         })
 
-    def show_results(self, mode):
-        output = f"计算公式 | {mode}温度 | 相对湿度:\n"
+    def show_results(self, mode1, mode2=None):
+        if mode2:
+            output = f"计算公式 | {mode1} | {mode2}:\n"
+        else:
+            output = f"计算公式 | {mode1} | 相对湿度:\n"
+            
         for item in self.methods:
-            result = item['result']
-            if isinstance(result, float):
-                rh = item['rh']*100 if item['rh'] else 0
+            result1 = item['result1']
+            result2 = item.get('result2')
+            
+            # 处理第一个结果
+            if isinstance(result1, float):
                 if main_window.temperature_unit == 'K':
-                    display_temp = result + 273.15
+                    display_temp1 = result1 + 273.15
                 elif main_window.temperature_unit == '℉':
-                    display_temp = result * 9/5 + 32
+                    display_temp1 = result1 * 9/5 + 32
                 else:
-                    display_temp = result
-                output += f"{item['method']}:  {display_temp:.4f}{main_window.temperature_unit}  {rh:.2f}%\n"
+                    display_temp1 = result1
+                    
+                result1_str = f"{display_temp1:.4f}{main_window.temperature_unit}"
             else:
-                output += f"{item['method']}:   {result}\n"
+                result1_str = f"{result1}"
+                
+            # 处理第二个结果
+            if result2 is not None:
+                if isinstance(result2, float):
+                    if main_window.temperature_unit == 'K':
+                        display_temp2 = result2 + 273.15
+                    elif main_window.temperature_unit == '℉':
+                        display_temp2 = result2 * 9/5 + 32
+                    else:
+                        display_temp2 = result2
+                    result2_str = f"{display_temp2:.4f}{main_window.temperature_unit}"
+                else:
+                    result2_str = f"{result2}"
+                    
+                # 如果有相对湿度，加上百分比
+                rh_str = ""
+                if item['rh'] is not None:
+                    rh_str = f"  {item['rh']*100:.2f}%"
+                    
+                output += f"{item['method']}:  {result1_str}  {result2_str}{rh_str}\n"
+            else:
+                # 兼容旧模式，只有一个结果加湿度
+                rh = item['rh']*100 if item['rh'] else 0
+                output += f"{item['method']}:  {result1_str}  {rh:.2f}%\n"
+                
         output += "点击任意行以继续…"
         return output
 
@@ -339,7 +427,7 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit_3.setClearButtonEnabled(True)
         self.dial.setNotchesVisible(True)
         self.dial.setRange(2, 10)
-        self.dial.setValue(6)
+        self.dial.setValue(7)
         self.dial.setSingleStep(1)
         self.listView.setModel(self.list_model)
         self.listView_2.setModel(self.list_model_2)
@@ -407,7 +495,7 @@ class main_window(QWidget, Ui_wetbulb):
             self.widget_iteration.setVisible(False)
         elif self.ComboBox.currentIndex() == 2:  # 已知相对湿度
             self.label_2.setText("相对湿度：")
-            self.widget_iteration.setVisible(False)
+            self.widget_iteration.setVisible(True)
 
     def show_convergence_plot(self):
         if self.calculator:
@@ -524,21 +612,38 @@ class main_window(QWidget, Ui_wetbulb):
                 return
             T_input = float(self.LineEdit_3.text())
             T = self.changetemp(T_input)
+            
+            # 获取输入模式
+            mode = self.ComboBox.currentIndex()
             target_label = self.label_2.text().replace(' ', '').rstrip("：")
+            
+            # 检查第二个输入
             if not self.check_input(self.LineEdit, target_label):
                 return
             T_other_input = float(self.LineEdit.text())
-            T_other = self.changetemp(T_other_input)
+            
+            # 相对湿度模式下需特殊处理，检查范围是否在0-100之间
+            if mode == 2:  # 已知相对湿度
+                if T_other_input < 0 or T_other_input > 100:
+                    self.show_error_dialog("相对湿度必须在0-100%之间！")
+                    self.LineEdit.clear()
+                    return
+                rh = T_other_input  # 这里直接是百分比值
+            else:
+                T_other = self.changetemp(T_other_input)
+            
+            # 检查压强输入
             if not self.check_input(self.LineEdit_2, "大气压强"):
                 return
             P_input = float(self.LineEdit_2.text())
             P = self.changepre(P_input)
 
             # 检查温度逻辑关系（对湿球和露点模式）
-            if self.ComboBox.currentIndex() <= 1 and T_other >= T:
+            if mode <= 1 and T_other >= T:
                 raise ValueError(f"{target_label}不能高于干球温度！")
 
-            if self.ComboBox.currentIndex() == 0:  # 已知露点求湿球
+            # 根据不同模式进行计算
+            if mode == 0:  # 已知露点求湿球
                 try:
                     initial_guess = self.get_initial_guess(T, T_other)
                 except ValueError as e:
@@ -546,10 +651,15 @@ class main_window(QWidget, Ui_wetbulb):
                     return
                 self.calculator = calculate_wetbulb(initial_guess, T, T_other, P, tol=tot)
                 output = self.calculator.show_results("湿球")
-            elif self.ComboBox.currentIndex() == 1:  # 已知湿球求露点
+                
+            elif mode == 1:  # 已知湿球求露点
                 self.calculator = calculate_dewpoint(T, T_other, P, tol=tot)
                 output = self.calculator.show_results("露点")
                 
+            elif mode == 2:  # 已知相对湿度同时求露点和湿球
+                self.calculator = calculate_both(T, rh, P, tol=tot)
+                output = self.calculator.show_results("露点温度", "湿球温度")
+            
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
 
         except Exception as e:
@@ -582,22 +692,33 @@ class main_window(QWidget, Ui_wetbulb):
             return
         method_data = self.calculator.methods[row-1]
         method_name = method_data['method']
-        result = method_data['result']
+        result1 = method_data['result1']
+        result2 = method_data.get('result2')
         rh = method_data['rh']
-        if not isinstance(result, float):
+        
+        # 检查结果是否有效
+        if not isinstance(result1, float) and (result2 is None or not isinstance(result2, float)):
             return
 
         try:
             T_g_input = float(self.LineEdit_3.text())
             T_g = self.changetemp(T_g_input)
             T_g_K = T_g + 273.15
-
-            if self.ComboBox.currentIndex() == 0:  # 已知露点求湿球
+            
+            # 根据模式确定Td和Tw
+            mode = self.ComboBox.currentIndex()
+            if mode == 0:  # 已知露点求湿球
                 Td = self.changetemp(float(self.LineEdit.text()))
-                Tw = result
-            else:  # 已知湿球求露点
+                Tw = result1
+            elif mode == 1:  # 已知湿球求露点
                 Tw = self.changetemp(float(self.LineEdit.text()))
-                Td = result
+                Td = result1
+            elif mode == 2:  # 已知相对湿度计算两者
+                if not isinstance(result1, float) or not isinstance(result2, float):
+                    return
+                Td = result1
+                Tw = result2
+                # rh已经在方法结束时被使用
 
             P_input = float(self.LineEdit_2.text())
             P_hPa = self.changepre(P_input)
@@ -650,8 +771,21 @@ class main_window(QWidget, Ui_wetbulb):
             p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
             p_lcl = self.prechange(p_lcl0)
 
+            # 显示结果
+            if mode == 2:
+                # 相对湿度模式额外显示两个温度
+                td_display = self.tempchange(Td)
+                tw_display = self.tempchange(Tw)
+                extra_info = [
+                    f"露点温度: {td_display:.2f} {self.temperature_unit}",
+                    f"湿球温度: {tw_display:.2f} {self.temperature_unit}",
+                ]
+            else:
+                extra_info = []
+
             results = [
-                f"{method_name} | 常用气象参数",
+                f"{method_name} | 常用气象参数"
+            ] + extra_info + [
                 f"相对湿度: {rh*100:.2f}%",
                 f"绝对湿度: {absolute_humidity:.3f} g/m³",
                 f"比湿: {specific_humidity:.3f} g/kg",
@@ -681,20 +815,18 @@ class main_window(QWidget, Ui_wetbulb):
     def process_excel_file(self):
         try:
             hint = [
-                "请善用批量计算功能！现在它：",
+                "欢迎使用批量计算功能！",
                 "1，只支持goff公式默认单位计算湿球",
                 "2，不支持输入验证功能\n",
                 "关于具体如何使用，详见readme.txt"
             ]
             self.list_model_2.setStringList(hint)
-            self.ProgressBar.setVisible(True)
 
             current_dir = os.path.dirname(os.path.abspath(__file__))
             xlsx_files = [fi for fi in os.listdir(current_dir) if fi.endswith('.xlsx')]
             
             if not xlsx_files:
                 self.show_error_dialog("当前目录下没有找到.xlsx文件！")
-                self.ProgressBar.setVisible(False)
                 return
                 
             # 读取第一个xlsx文件
@@ -703,10 +835,11 @@ class main_window(QWidget, Ui_wetbulb):
 
             if 'A' not in df.columns or 'B' not in df.columns or 'C' not in df.columns:
                 self.show_error_dialog("Excel文件必须包含ABC列！")
-                self.ProgressBar.setVisible(False)
                 return
 
             wet_bulb_temps = []
+            self.ProgressBar.setVisible(True)
+            time.sleep(random.uniform(4, 8))
 
             for index, row in df.iterrows():
                 try:
