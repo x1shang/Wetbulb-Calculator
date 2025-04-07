@@ -240,32 +240,18 @@ def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
                 calculator.add_result(name,"计算失败")
     return calculator
 
-def calculate_both(T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
+def calculate_both(initial_guess, T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
     calculator = CalculatorMemory()
-    
-    # 将百分比转换为小数
     rh_decimal = rh / 100
-    
     for name, condition in methods:
         if not condition(T_g):
-            calculator.add_result(name, 'T_g超出适用范围', '不适用')
+            calculator.add_result(name, '不适用')
             continue
             
         try:
-            # 1. 计算饱和蒸气压
             es_dry = calculate_esat(T_g, name)
-            # 2. 计算实际蒸气压
             e = es_dry * rh_decimal
-            # 3. 计算露点温度Td
             Td = esat_calculate(e, name, max_iter, tol)
-            
-            # 4. 获取初始猜测值
-            if T_g >= 0:
-                initial_guess = T_g - 5
-            else:
-                initial_guess = T_g - 2
-                
-            # 5. 计算湿球温度Tw
             T_w = initial_guess
             for iter_num in range(max_iter):
                 e_sat = calculate_esat(T_w, name)
@@ -280,7 +266,7 @@ def calculate_both(T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
                     calculator.add_result(name, Td, T_w_new)
                     break
                 elif abs(f) > 1e3:
-                    calculator.add_result(name, "露点计算成功，湿球残差过大", "计算失败")
+                    calculator.add_result(name,Td, "湿球残差过大")
                     break
                     
                 T_w = T_w_new
@@ -288,11 +274,11 @@ def calculate_both(T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
                 calculator.add_result(name, Td, '湿球未收敛')
                 
         except OverflowError:
-            calculator.add_result(name, '数值溢出', '计算失败')
+            calculator.add_result(name, '数值溢出')
         except Exception as e:
-            calculator.add_result(name, f'错误: {str(e)}', '计算失败')
+            calculator.add_result(name, f'错误: {str(e)}')
         except:
-            calculator.add_result(name, '计算失败', '计算失败')
+            calculator.add_result(name, '计算失败')
             
     return calculator
 
@@ -318,8 +304,7 @@ class CalculatorMemory:
         for item in self.methods:
             result1 = item['result1']
             result2 = item.get('result2')
-            
-            # 处理第一个结果
+
             if isinstance(result1, float):
                 if main_window.temperature_unit == 'K':
                     display_temp1 = result1 + 273.15
@@ -331,8 +316,7 @@ class CalculatorMemory:
                 result1_str = f"{display_temp1:.4f}{main_window.temperature_unit}"
             else:
                 result1_str = f"{result1}"
-                
-            # 处理第二个结果
+
             if result2 is not None:
                 if isinstance(result2, float):
                     if main_window.temperature_unit == 'K':
@@ -344,18 +328,21 @@ class CalculatorMemory:
                     result2_str = f"{display_temp2:.4f}{main_window.temperature_unit}"
                 else:
                     result2_str = f"{result2}"
-                    
-                # 如果有相对湿度，加上百分比
+
                 rh_str = ""
-                if item['rh'] is not None:
+                if item['rh'] == 0 :
+                    rh_str = ""
+                elif item['rh'] is not None:
                     rh_str = f"  {item['rh']*100:.2f}%"
                     
-                output += f"{item['method']}:  {result1_str}  {result2_str}{rh_str}\n"
+                output += f"{item['method']}:  {result1_str}  {result2_str}  {rh_str}\n"
             else:
-                # 兼容旧模式，只有一个结果加湿度
-                rh = item['rh']*100 if item['rh'] else 0
-                output += f"{item['method']}:  {result1_str}  {rh:.2f}%\n"
-                
+                if item['rh']:
+                    rh = item['rh']*100
+                    output += f"{item['method']}:  {result1_str}  {rh:.2f}%\n"
+                else:
+                    output += f"{item['method']}:  {result1_str}\n"
+
         output += "点击任意行以继续…"
         return output
 
@@ -374,18 +361,24 @@ class CalculatorMemory:
         plt.figure(figsize=(12,6))
         plt.subplot(1,2,1)   # 温度变化子图
         for method,data in self.iteration_data.items():
+            if len(data['iterations']) <= 1:
+                continue  # 跳过只有一次迭代的数据
+                
             iterations = data['iterations'][1:]   # 跳过第一次迭代（索引0对应的数据）
             temperatures = data['temperatures'][1:]
             plt.plot(iterations,temperatures,
                      marker='o',label=method)
         plt.xlabel('迭代次数')
-        plt.ylabel('湿球温度估计值 (°C)')
+        plt.ylabel('温度估计值 (°C)')
         plt.title('温度迭代过程')
         plt.grid(True)
         plt.legend()
 
         plt.subplot(1,2,2)          # 残差变化子图
         for method,data in self.iteration_data.items():
+            if len(data['iterations']) <= 1:
+                continue  # 跳过只有一次迭代的数据
+                
             iterations = data['iterations'][1:]
             residuals = data['residuals'][1:]
             plt.semilogy(iterations,residuals,
@@ -490,12 +483,15 @@ class main_window(QWidget, Ui_wetbulb):
         if self.ComboBox.currentIndex() == 0:  # 已知露点求湿球
             self.label_2.setText("露点温度：")
             self.widget_iteration.setVisible(True)
+            self.LineEdit.setPlaceholderText(f"{self.temp_min}~{self.temp_max}{self.temperature_unit}")
         elif self.ComboBox.currentIndex() == 1:  # 已知湿球求露点
             self.label_2.setText("湿球温度：")
             self.widget_iteration.setVisible(False)
+            self.LineEdit.setPlaceholderText(f"{self.temp_min}~{self.temp_max}{self.temperature_unit}")
         elif self.ComboBox.currentIndex() == 2:  # 已知相对湿度
             self.label_2.setText("相对湿度：")
             self.widget_iteration.setVisible(True)
+            self.LineEdit.setPlaceholderText("0~100%")
 
     def show_convergence_plot(self):
         if self.calculator:
@@ -599,6 +595,9 @@ class main_window(QWidget, Ui_wetbulb):
                     self.show_error_dialog(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
                     line_edit.clear()
                     return False
+            elif "相对湿度" in field_name:
+                # 用于确保是有效数字
+                pass
 
             return True
         except ValueError:
@@ -616,33 +615,28 @@ class main_window(QWidget, Ui_wetbulb):
             # 获取输入模式
             mode = self.ComboBox.currentIndex()
             target_label = self.label_2.text().replace(' ', '').rstrip("：")
-            
-            # 检查第二个输入
+
             if not self.check_input(self.LineEdit, target_label):
                 return
             T_other_input = float(self.LineEdit.text())
-            
-            # 相对湿度模式下需特殊处理，检查范围是否在0-100之间
+
             if mode == 2:  # 已知相对湿度
                 if T_other_input < 0 or T_other_input > 100:
                     self.show_error_dialog("相对湿度必须在0-100%之间！")
                     self.LineEdit.clear()
                     return
-                rh = T_other_input  # 这里直接是百分比值
+                rh = T_other_input  # 这里是百分比
             else:
                 T_other = self.changetemp(T_other_input)
-            
-            # 检查压强输入
+
             if not self.check_input(self.LineEdit_2, "大气压强"):
                 return
             P_input = float(self.LineEdit_2.text())
             P = self.changepre(P_input)
 
-            # 检查温度逻辑关系（对湿球和露点模式）
             if mode <= 1 and T_other >= T:
                 raise ValueError(f"{target_label}不能高于干球温度！")
 
-            # 根据不同模式进行计算
             if mode == 0:  # 已知露点求湿球
                 try:
                     initial_guess = self.get_initial_guess(T, T_other)
@@ -650,14 +644,19 @@ class main_window(QWidget, Ui_wetbulb):
                     self.show_error_dialog(str(e))
                     return
                 self.calculator = calculate_wetbulb(initial_guess, T, T_other, P, tol=tot)
-                output = self.calculator.show_results("湿球")
+                output = self.calculator.show_results("湿球温度")
                 
             elif mode == 1:  # 已知湿球求露点
                 self.calculator = calculate_dewpoint(T, T_other, P, tol=tot)
-                output = self.calculator.show_results("露点")
+                output = self.calculator.show_results("露点温度")
                 
             elif mode == 2:  # 已知相对湿度同时求露点和湿球
-                self.calculator = calculate_both(T, rh, P, tol=tot)
+                try:
+                    initial_guess = self.get_initial_guess(T, T_other)
+                except ValueError as e:
+                    self.show_error_dialog(str(e))
+                    return
+                self.calculator = calculate_both(initial_guess, T, rh, P, tol=tot)
                 output = self.calculator.show_results("露点温度", "湿球温度")
             
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
@@ -692,21 +691,26 @@ class main_window(QWidget, Ui_wetbulb):
             return
         method_data = self.calculator.methods[row-1]
         method_name = method_data['method']
-        result1 = method_data['result1']
+        result1 = method_data.get('result1')
         result2 = method_data.get('result2')
-        rh = method_data['rh']
-        
-        # 检查结果是否有效
-        if not isinstance(result1, float) and (result2 is None or not isinstance(result2, float)):
+        rh = method_data.get('rh')
+
+        mode = self.ComboBox.currentIndex()
+        if mode == 0 or mode == 1:
+            if not isinstance(result1, float):
+                return
+        elif mode == 2:
+            if not isinstance(result1, float) or not isinstance(result2, float):
+                return
+
+        if rh is None and (mode == 0 or mode == 1):
             return
 
         try:
             T_g_input = float(self.LineEdit_3.text())
             T_g = self.changetemp(T_g_input)
             T_g_K = T_g + 273.15
-            
-            # 根据模式确定Td和Tw
-            mode = self.ComboBox.currentIndex()
+
             if mode == 0:  # 已知露点求湿球
                 Td = self.changetemp(float(self.LineEdit.text()))
                 Tw = result1
@@ -714,11 +718,12 @@ class main_window(QWidget, Ui_wetbulb):
                 Tw = self.changetemp(float(self.LineEdit.text()))
                 Td = result1
             elif mode == 2:  # 已知相对湿度计算两者
-                if not isinstance(result1, float) or not isinstance(result2, float):
-                    return
                 Td = result1
                 Tw = result2
-                # rh已经在方法结束时被使用
+                # rh可能在计算中直接使用输入值
+                if rh is None:
+                    rh_input = float(self.LineEdit.text())
+                    rh = rh_input / 100  # 转换为小数
 
             P_input = float(self.LineEdit_2.text())
             P_hPa = self.changepre(P_input)
@@ -733,9 +738,9 @@ class main_window(QWidget, Ui_wetbulb):
             ups = Mv/Md
             upsilon = (1-ups)/ups
 
-            esd = calculate_esat(Td, method_name)
+            es = calculate_esat(T_g, method_name)
             esw = calculate_esat(Tw, method_name)
-            e = calculate_esat(T_g, method_name)
+            e = calculate_esat(Td, method_name)
             P_dry = P_hPa - esw
 
             ro_dry = P_dry*100/(Rd*T_g_K)
@@ -746,7 +751,7 @@ class main_window(QWidget, Ui_wetbulb):
             L_v = 2500.8-2.3665*T_g-0.0023*T_g**2+1.87e-5*T_g**3-4.2e-8*T_g**4  # 蒸发潜热
             han = Cp/1000*T_g+(L_v+Cpw/1000*T_g)*dm
 
-            esd1 = self.prechange(esd)
+            es1 = self.prechange(es)
             esw1 = self.prechange(esw)
             e1 = self.prechange(e)
             P_dry1 = self.prechange(P_dry)
@@ -766,31 +771,23 @@ class main_window(QWidget, Ui_wetbulb):
             theta_E = self.tempchange(theta_e-273.15)
             theta_V = self.tempchange(theta_v-273.15)
 
-            t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
-            t_lcl = self.tempchange(1/t_lcl0-243.5)
-            p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
-            p_lcl = self.prechange(p_lcl0)
+            # 计算LCL，避免可能的数学错误
+            try:
+                t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
+                t_lcl = self.tempchange(1/t_lcl0-243.5)
+                p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
+                p_lcl = self.prechange(p_lcl0)
+            except (ValueError, ZeroDivisionError):
+                t_lcl = float('nan')
+                p_lcl = float('nan')
 
-            # 显示结果
-            if mode == 2:
-                # 相对湿度模式额外显示两个温度
-                td_display = self.tempchange(Td)
-                tw_display = self.tempchange(Tw)
-                extra_info = [
-                    f"露点温度: {td_display:.2f} {self.temperature_unit}",
-                    f"湿球温度: {tw_display:.2f} {self.temperature_unit}",
-                ]
-            else:
-                extra_info = []
-
-            results = [
-                f"{method_name} | 常用气象参数"
-            ] + extra_info + [
+            base_info = [
+                f"{method_name} | 常用气象参数",
                 f"相对湿度: {rh*100:.2f}%",
                 f"绝对湿度: {absolute_humidity:.3f} g/m³",
                 f"比湿: {specific_humidity:.3f} g/kg",
-                f"蒸气压: {esw1:.2f} {self.pressure_unit}",
-                f"饱和蒸气压: {e1:.2f} {self.pressure_unit}",
+                f"蒸气压: {e1:.2f} {self.pressure_unit}",
+                f"饱和蒸气压: {es1:.2f} {self.pressure_unit}",
                 f"干空气分压: {P_dry1:.1f} {self.pressure_unit}",
                 f"干空气密度: {ro_dry:.3f} kg/m³",
                 f"水蒸气密度: {ro_vapor:.3f} kg/m³",
@@ -803,10 +800,20 @@ class main_window(QWidget, Ui_wetbulb):
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
                 f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
                 f"虚位温: {theta_V:.2f} {self.temperature_unit}",
-                f"lcl温度: {t_lcl:.2f} {self.temperature_unit}",
-                f"lcl压强: {p_lcl:.1f} {self.pressure_unit}",
-                f"露点蒸气压: {esd1:.2f} {self.pressure_unit}",
             ]
+
+            lcl_info = []
+            if not math.isnan(t_lcl) and not math.isnan(p_lcl):
+                lcl_info = [
+                    f"lcl温度: {t_lcl:.2f} {self.temperature_unit}",
+                    f"lcl压强: {p_lcl:.1f} {self.pressure_unit}",
+                ]
+
+            additional_info = [
+                f"湿球蒸气压: {esw1:.2f} {self.pressure_unit}",
+            ]
+
+            results = base_info + lcl_info + additional_info
             self.list_model_2.setStringList(results)
 
         except Exception as e:
