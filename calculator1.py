@@ -15,8 +15,8 @@ import qfluentwidgets
 class Ui_wetbulb(object):
     def setupUi(self, wetbulb):
         wetbulb.setObjectName("wetbulb")
-        wetbulb.resize(618, 618)
-        wetbulb.setMinimumSize(QtCore.QSize(618, 618))
+        wetbulb.resize(618, 635)
+        wetbulb.setMinimumSize(QtCore.QSize(618, 635))
         self.verticalLayout_9 = QtWidgets.QVBoxLayout(wetbulb)
         self.verticalLayout_9.setObjectName("verticalLayout_9")
         self.horizontalLayout_7 = QtWidgets.QHBoxLayout()

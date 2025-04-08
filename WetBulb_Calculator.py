@@ -7,12 +7,16 @@ import webbrowser
 import matplotlib.pyplot as plt
 import pandas as pd
 import openpyxl  # 添加Excel支持
+
 from PySide2.QtCore import QStringListModel, Qt
-from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog, QVBoxLayout, QLabel, QPushButton
+from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog
 from PySide2.QtGui import QIcon
+from qfluentwidgets import TeachingTip,TeachingTipTailPosition,InfoBarIcon,ToolTip,ToolTipFilter,ToolTipPosition,\
+    InfoBar,InfoBarPosition
+
 from calculator1 import Ui_wetbulb
-from 单位 import Ui_Dia
-from 关于 import Ui_Dialog
+from unit import Ui_Dia
+from about import Ui_Dialog
 
 tag = "v1.2.0"
 tot = 1e-7  # 添加全局精度变量
@@ -426,7 +430,17 @@ class main_window(QWidget, Ui_wetbulb):
         self.listView_2.setModel(self.list_model_2)
         self.listView.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.listView_2.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        
+        self.pushButton_2.setToolTip('清空')
+        self.pushButton_3.setToolTip('截屏')
+        self.pushButton_4.setToolTip('软件信息')
+        self.pushButton_5.setToolTip('设置单位')
+        self.pushButton_7.setToolTip('计算当前目录下xlsx\n中的所有数据！')
+        self.pushButton_2.installEventFilter(ToolTipFilter(self.pushButton_2,100,ToolTipPosition.BOTTOM))
+        self.pushButton_3.installEventFilter(ToolTipFilter(self.pushButton_3,100,ToolTipPosition.BOTTOM))
+        self.pushButton_4.installEventFilter(ToolTipFilter(self.pushButton_4,100,ToolTipPosition.BOTTOM))
+        self.pushButton_5.installEventFilter(ToolTipFilter(self.pushButton_5,100,ToolTipPosition.BOTTOM))
+        self.pushButton_7.installEventFilter(ToolTipFilter(self.pushButton_7,100,ToolTipPosition.RIGHT))
+
         # 设置单位显示
         self.update_input_labels()
         
@@ -457,7 +471,7 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit_3.returnPressed.connect(lambda: self.LineEdit.setFocus())
         self.LineEdit_3.returnPressed.connect(lambda: self.check_input(self.LineEdit_3, "干球温度"))
         self.LineEdit.returnPressed.connect(lambda: self.LineEdit_2.setFocus())
-        self.LineEdit.returnPressed.connect(lambda: self.check_input(self.LineEdit, self.label_2.text()))
+        self.LineEdit.returnPressed.connect(lambda: self.check_input(self.LineEdit, self.label_2.text().rstrip("：")))
         
         # 迭代图按钮
         self.pushButton.clicked.connect(self.show_convergence_plot)
@@ -474,6 +488,28 @@ class main_window(QWidget, Ui_wetbulb):
         
         # 进一步计算
         self.listView.clicked.connect(self.on_list_item_clicked)
+
+    def createSuccessInfoBar(self,output_path):
+        InfoBar.success(
+            title='处理成功！',
+            content=f"已存储至路径{output_path}",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self
+        )
+
+    def createErrorInfoBar(self,message):
+        InfoBar.error(
+            title='错误！',
+            content=f"{message}",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.BOTTOM_RIGHT,
+            duration=5000,  # won't disappear automatically
+            parent=self
+        )
 
     def update_tol(self, value):
         global tot
@@ -497,7 +533,7 @@ class main_window(QWidget, Ui_wetbulb):
         if self.calculator:
             self.calculator.show_convergence()
         else:
-            self.show_error_dialog("请先执行计算！")
+            self.createErrorInfoBar("请先执行计算！")
 
     def clearall(self):
         self.list_model.setStringList([])
@@ -515,7 +551,7 @@ class main_window(QWidget, Ui_wetbulb):
                 pixmap.save(file_path)
                 print(f"截图已保存至：{file_path}")
             except Exception as e:
-                self.show_error_dialog(f"保存失败：{str(e)}")
+                self.createErrorInfoBar(f"保存失败：{str(e)}")
 
     def changepre(self, P):
         if self.pressure_unit == 'hPa':
@@ -571,7 +607,7 @@ class main_window(QWidget, Ui_wetbulb):
     def check_input(self, line_edit, field_name):
         text = line_edit.text().strip()
         if not text:
-            self.show_error_dialog(f"{field_name}不能为空！")
+            self.createErrorInfoBar(f"{field_name}不能为空！")
             line_edit.clear()
             return False
         try:
@@ -583,7 +619,7 @@ class main_window(QWidget, Ui_wetbulb):
                 if value_C < -150 or value_C > 200:
                     min_ui = self.tempchange(-150)
                     max_ui = self.tempchange(200)
-                    self.show_error_dialog(
+                    self.createErrorInfoBar(
                         f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.temperature_unit} 范围内")
                     line_edit.clear()
                     return False
@@ -592,7 +628,7 @@ class main_window(QWidget, Ui_wetbulb):
                 if value_hPa < 500 or value_hPa > 1100:
                     min_ui = self.prechange(500)
                     max_ui = self.prechange(1100)
-                    self.show_error_dialog(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
+                    self.createErrorInfoBar(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
                     line_edit.clear()
                     return False
             elif "相对湿度" in field_name:
@@ -601,7 +637,7 @@ class main_window(QWidget, Ui_wetbulb):
 
             return True
         except ValueError:
-            self.show_error_dialog(f"{field_name}必须是有效数字！")
+            self.createErrorInfoBar(f"{field_name}必须是有效数字！")
             line_edit.clear()
             return False
             
@@ -622,7 +658,7 @@ class main_window(QWidget, Ui_wetbulb):
 
             if mode == 2:  # 已知相对湿度
                 if T_other_input < 0 or T_other_input > 100:
-                    self.show_error_dialog("相对湿度必须在0-100%之间！")
+                    self.createErrorInfoBar("相对湿度必须在0-100%之间！")
                     self.LineEdit.clear()
                     return
                 rh = T_other_input  # 这里是百分比
@@ -641,7 +677,7 @@ class main_window(QWidget, Ui_wetbulb):
                 try:
                     initial_guess = self.get_initial_guess(T, T_other)
                 except ValueError as e:
-                    self.show_error_dialog(str(e))
+                    self.createErrorInfoBar(str(e))
                     return
                 self.calculator = calculate_wetbulb(initial_guess, T, T_other, P, tol=tot)
                 output = self.calculator.show_results("湿球温度")
@@ -654,7 +690,7 @@ class main_window(QWidget, Ui_wetbulb):
                 try:
                     initial_guess = self.get_initial_guess(T, T_other)
                 except ValueError as e:
-                    self.show_error_dialog(str(e))
+                    self.createErrorInfoBar(str(e))
                     return
                 self.calculator = calculate_both(initial_guess, T, rh, P, tol=tot)
                 output = self.calculator.show_results("露点温度", "湿球温度")
@@ -662,27 +698,7 @@ class main_window(QWidget, Ui_wetbulb):
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
 
         except Exception as e:
-            self.show_error_dialog(str(e))
-            
-    def show_error_dialog(self, message):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("错误")
-        dialog.setWindowIcon(QIcon(resource_path('err.ico')))
-        layout = QVBoxLayout(dialog)
-        label = QLabel(message)
-        button = QPushButton("确定")
-        layout.addWidget(label)
-        layout.addWidget(button)
-        button.clicked.connect(dialog.close)
-        dialog.exec_()
-        
-    def show_unit_dialog(self):
-        unit_dialog = UnitDialog(self)
-        unit_dialog.exec_()
-        
-    def show_about_dialog(self):
-        about_dialog = AboutDialog()
-        about_dialog.exec_()
+            self.createErrorInfoBar(str(e))
         
     def on_list_item_clicked(self, index):
         row = index.row()
@@ -741,12 +757,12 @@ class main_window(QWidget, Ui_wetbulb):
             es = calculate_esat(T_g, method_name)
             esw = calculate_esat(Tw, method_name)
             e = calculate_esat(Td, method_name)
-            P_dry = P_hPa - esw
+            P_dry = P_hPa - e
 
-            ro_dry = P_dry*100/(Rd*T_g_K)
-            ro_vapor = esw*100/(Rv*T_g_K)
-            ro = ro_dry + ro_vapor
-            dm = ro_vapor/ro_dry  # 含湿量就是混合率
+            ro_dry = P_dry*100/(Rd*T_g_K)  #***
+            ro_vapor = esw*100/(Rv*T_g_K)  # ***
+            ro = ro_dry + ro_vapor    # ***
+            dm = ro_vapor/ro_dry  # 含湿量就是混合率***
             dm1 = dm*1000
             L_v = 2500.8-2.3665*T_g-0.0023*T_g**2+1.87e-5*T_g**3-4.2e-8*T_g**4  # 蒸发潜热
             han = Cp/1000*T_g+(L_v+Cpw/1000*T_g)*dm
@@ -757,8 +773,8 @@ class main_window(QWidget, Ui_wetbulb):
             P_dry1 = self.prechange(P_dry)
 
             sat_mixing_ratio = ups*(e/(P_hPa-e))*1000 if P_hPa > e else 0  # 饱和混合率 (g/kg)
-            absolute_humidity = (esw*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
-            specific_humidity = (ups*esw)/(P_hPa-(1-ups)*esw)*1000 if P_hPa > (1-ups)*esw else 0  # 比湿 (g/kg)
+            absolute_humidity = (e*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
+            specific_humidity = (ups*esw)/(P_hPa-(1-ups)*esw)*1000 if P_hPa > (1-ups)*esw else 0  # 比湿 (g/kg)**E*
 
             q = specific_humidity/1000  # 比湿转kg/kg
             virtual_temp_K = T_g_K*(1+upsilon*q)  # 精确系数0.6078
@@ -773,7 +789,7 @@ class main_window(QWidget, Ui_wetbulb):
 
             # 计算LCL，避免可能的数学错误
             try:
-                t_lcl0 = 1/(Td+243.5)-math.log(rh)/5423
+                t_lcl0 = 1/((1/(Td+273.15-55))-(math.log(rh)/2840))+55
                 t_lcl = self.tempchange(1/t_lcl0-243.5)
                 p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
                 p_lcl = self.prechange(p_lcl0)
@@ -795,7 +811,7 @@ class main_window(QWidget, Ui_wetbulb):
                 f"焓值: {han:.2f} kJ/kg",
                 f"蒸发潜热: {L_v:.1f} kJ/kg",
                 f"含湿量: {dm1:.3f} g/kg",
-                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
+                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg", # ***
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
                 f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
@@ -817,7 +833,7 @@ class main_window(QWidget, Ui_wetbulb):
             self.list_model_2.setStringList(results)
 
         except Exception as e:
-            self.show_error_dialog(f"计算错误: {str(e)}")
+            self.createErrorInfoBar(f"计算错误: {str(e)}")
             
     def process_excel_file(self):
         try:
@@ -833,7 +849,7 @@ class main_window(QWidget, Ui_wetbulb):
             xlsx_files = [fi for fi in os.listdir(current_dir) if fi.endswith('.xlsx')]
             
             if not xlsx_files:
-                self.show_error_dialog("当前目录下没有找到.xlsx文件！")
+                self.createErrorInfoBar("当前目录下没有找到.xlsx文件！")
                 return
                 
             # 读取第一个xlsx文件
@@ -841,12 +857,11 @@ class main_window(QWidget, Ui_wetbulb):
             df = pd.read_excel(file_path)
 
             if 'A' not in df.columns or 'B' not in df.columns or 'C' not in df.columns:
-                self.show_error_dialog("Excel文件必须包含ABC列！")
+                self.createErrorInfoBar("Excel文件必须包含ABC列！")
                 return
 
             wet_bulb_temps = []
             self.ProgressBar.setVisible(True)
-            time.sleep(random.uniform(4, 8))
 
             for index, row in df.iterrows():
                 try:
@@ -859,8 +874,8 @@ class main_window(QWidget, Ui_wetbulb):
                         method = 'Goff-冰面'
                     calculator = calculate_wetbulb(Td, T, Td, P)
                     for result in calculator.methods:
-                        if result['method'] == method and isinstance(result['result'], float):
-                            wet_bulb_temps.append(result['result'])
+                        if result['method'] == method and isinstance(result['result1'], float):
+                            wet_bulb_temps.append(result['result1'])
                             break
                     else:
                         wet_bulb_temps.append(None)
@@ -875,11 +890,19 @@ class main_window(QWidget, Ui_wetbulb):
             df.to_excel(output_path, index=False)
             
             self.ProgressBar.setVisible(False)
-            self.show_error_dialog(f"处理完成！结果已保存为：{output_path}")
+            self.createSuccessInfoBar(str(output_path))
 
         except Exception as e:
             self.ProgressBar.setVisible(False)
-            self.show_error_dialog(f"处理Excel文件时出错：{str(e)}")
+            self.createErrorInfoBar(f"处理Excel文件时出错：{str(e)}")
+
+    def show_unit_dialog(self):
+        unit_dialog = UnitDialog(self)
+        unit_dialog.exec_()
+
+    def show_about_dialog(self):
+        about_dialog = AboutDialog()
+        about_dialog.exec_()
 
 class AboutDialog(QDialog, Ui_Dialog):
     def __init__(self):
