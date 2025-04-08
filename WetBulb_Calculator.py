@@ -507,7 +507,7 @@ class main_window(QWidget, Ui_wetbulb):
             orient=Qt.Horizontal,
             isClosable=True,
             position=InfoBarPosition.BOTTOM_RIGHT,
-            duration=5000,  # won't disappear automatically
+            duration=5000,  
             parent=self
         )
 
@@ -838,14 +838,23 @@ class main_window(QWidget, Ui_wetbulb):
     def process_excel_file(self):
         try:
             hint = [
-                "欢迎使用批量计算功能！",
-                "1，只支持goff公式默认单位计算湿球",
-                "2，不支持输入验证功能\n",
-                "关于具体如何使用，详见readme.txt"
+                "欢迎使用批量计算功能！请确认：",
+                "A列为干球温度",
+                f"B列为{self.label_2.text().strip('：')}",
+                "C列为大气压强",
+                "单位与设置相同",
+                "\n关于具体如何使用，详见readme.txt"
             ]
             self.list_model_2.setStringList(hint)
 
-            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # 获取可执行文件所在目录
+            if hasattr(sys, '_MEIPASS'):
+                # 如果是打包后的exe
+                current_dir = os.path.dirname(sys.executable)
+            else:
+                # 如果是开发环境
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+
             xlsx_files = [fi for fi in os.listdir(current_dir) if fi.endswith('.xlsx')]
             
             if not xlsx_files:
@@ -860,32 +869,95 @@ class main_window(QWidget, Ui_wetbulb):
                 self.createErrorInfoBar("Excel文件必须包含ABC列！")
                 return
 
-            wet_bulb_temps = []
+            results = []
             self.ProgressBar.setVisible(True)
+            QApplication.processEvents()  # 确保进度条显示
+
+            total_rows = len(df)
+            mode = self.ComboBox.currentIndex()  # 获取当前计算模式
 
             for index, row in df.iterrows():
                 try:
-                    T = float(row['A'])
-                    Td = float(row['B'])
-                    P = float(row['C'])
-                    if T >= 0:
-                        method = 'Goff-水面'
-                    else:
-                        method = 'Goff-冰面'
-                    calculator = calculate_wetbulb(Td, T, Td, P)
-                    for result in calculator.methods:
-                        if result['method'] == method and isinstance(result['result1'], float):
-                            wet_bulb_temps.append(result['result1'])
-                            break
-                    else:
-                        wet_bulb_temps.append(None)
+                    # 转换输入单位到标准单位（℃和hPa）
+                    T = self.changetemp(float(row['A']))
+                    P = self.changepre(float(row['C']))
+                    
+                    if mode == 0:  # 已知露点求湿球
+                        Td = self.changetemp(float(row['B']))
+                        initial_guess = self.get_initial_guess(T, Td)
+                        calculator = calculate_wetbulb(initial_guess, T, Td, P)
+                        # 查找Goff公式的结果
+                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
+                        for result in calculator.methods:
+                            if result['method'] == method and isinstance(result['result1'], float):
+                                results.append(self.tempchange(result['result1']))  # 转换回用户单位
+                                break
+                        else:
+                            results.append(None)
+                            
+                    elif mode == 1:  # 已知湿球求露点
+                        Tw = self.changetemp(float(row['B']))
+                        calculator = calculate_dewpoint(T, Tw, P)
+                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
+                        for result in calculator.methods:
+                            if result['method'] == method and isinstance(result['result1'], float):
+                                results.append(self.tempchange(result['result1']))  # 转换回用户单位
+                                break
+                        else:
+                            results.append(None)
+                            
+                    elif mode == 2:  # 已知相对湿度同时求露点和湿球
+                        rh = float(row['B'])  # 相对湿度不需要单位转换
+                        initial_guess = self.get_initial_guess(T, rh)
+                        calculator = calculate_both(initial_guess, T, rh, P)
+                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
+                        for result in calculator.methods:
+                            if result['method'] == method:
+                                if isinstance(result['result1'], float) and isinstance(result['result2'], float):
+                                    # 同时添加露点和湿球温度（转换回用户单位）
+                                    results.append([self.tempchange(result['result1']), 
+                                                  self.tempchange(result['result2'])])
+                                    break
+                        else:
+                            results.append([None, None])
                         
                 except (ValueError, TypeError):
-                    wet_bulb_temps.append(None)
+                    results.append(None if mode != 2 else [None, None])
+                
+                # 更新进度条
+                progress = int((index + 1) / total_rows * 100)
+                self.ProgressBar.setValue(progress)
+                QApplication.processEvents()  # 确保界面更新
 
-            df['D'] = wet_bulb_temps
+            # 根据模式设置结果列
+            if mode == 0:
+                df['D'] = results
+                df = df.rename(columns={'D': '湿球'})
+            elif mode == 1:
+                df['D'] = results
+                df = df.rename(columns={'D': '露点'})
+            elif mode == 2:
+                df[['D', 'E']] = pd.DataFrame(results, columns=['露点', '湿球'])
             
-            # 保存结果
+            # 添加单位信息到列名
+            temp_unit = self.temperature_unit
+            pressure_unit = self.pressure_unit
+            df = df.rename(columns={
+                'A': f'干球{temp_unit}',
+                'B': f'{self.label_2.text().strip("：")}{temp_unit if mode != 2 else "%"}',
+                'C': f'大气{pressure_unit}'
+            })
+            if mode == 0:
+                df = df.rename(columns={'湿球': f'湿球{temp_unit}'})
+            elif mode == 1:
+                df = df.rename(columns={'露点': f'露点{temp_unit}'})
+            elif mode == 2:
+                df = df.rename(columns={
+                    '露点': f'露点{temp_unit}',
+                    '湿球': f'湿球{temp_unit}'
+                })
+            
+            # 保存结果，使用与输入文件相同的目录
             output_path = os.path.join(current_dir, f"result_{xlsx_files[0]}")
             df.to_excel(output_path, index=False)
             

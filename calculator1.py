@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'C:/Users/zhu_j/Desktop/文件夹/python/晴雨表/calculator1.ui'
+# Form implementation generated from reading ui file 'C:\Users\zhu_j\Desktop\文件夹\python\晴雨表\calculator1.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.10
 #
@@ -184,7 +184,7 @@ class Ui_wetbulb(object):
         self.horizontalLayout_8.addLayout(self.verticalLayout)
         self.verticalLayout_8 = QtWidgets.QVBoxLayout()
         self.verticalLayout_8.setObjectName("verticalLayout_8")
-        self.ProgressBar = IndeterminateProgressBar(wetbulb)
+        self.ProgressBar = ProgressBar(wetbulb)
         self.ProgressBar.setObjectName("ProgressBar")
         self.verticalLayout_8.addWidget(self.ProgressBar)
         self.listView_2 = QtWidgets.QListView(wetbulb)
@@ -228,4 +228,4 @@ class Ui_wetbulb(object):
         self.ComboBox_2.setItemText(0, _translate("wetbulb", "Tw=Td"))
         self.ComboBox_2.setItemText(1, _translate("wetbulb", "Tw=T-n"))
         self.pushButton.setText(_translate("wetbulb", "显示迭代图"))
-from qfluentwidgets import IndeterminateProgressBar, LineEdit
+from qfluentwidgets import LineEdit, ProgressBar
