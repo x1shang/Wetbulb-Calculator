@@ -2,11 +2,11 @@ import sys
 import os
 import math
 import time
-import random
 import webbrowser
 import matplotlib.pyplot as plt
 import pandas as pd
 import openpyxl  # 添加Excel支持
+import json  # 添加json支持
 
 from PySide2.QtCore import QStringListModel, Qt
 from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog
@@ -18,8 +18,27 @@ from calculator1 import Ui_wetbulb
 from unit import Ui_Dia
 from about import Ui_Dialog
 
-tag = "v1.2.0"
-tot = 1e-7  # 添加全局精度变量
+def load_g_value():
+    try:
+        cfg_path = resource_path('cfg.json')
+        with open(cfg_path, 'r') as f:
+            config = json.load(f)
+            return config.get('g', 9.81)
+    except Exception:
+        return 9.81
+
+def save_g_value(g_value):
+    try:
+        cfg_path = resource_path('cfg.json')
+        config = {'g': g_value}
+        with open(cfg_path, 'w') as f:
+            json.dump(config, f)
+    except Exception as e:
+        print(f"保存g值失败: {str(e)}")
+
+tag = "v1.2.0" # 1.2.0正式版@降水相态研究性学习小组
+tot = 1e-7
+g = load_g_value()
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
@@ -422,6 +441,7 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.setClearButtonEnabled(True)
         self.LineEdit_2.setClearButtonEnabled(True)
         self.LineEdit_3.setClearButtonEnabled(True)
+        self.LineEdit_4.setClearButtonEnabled(True)
         self.dial.setNotchesVisible(True)
         self.dial.setRange(2, 10)
         self.dial.setValue(7)
@@ -473,6 +493,11 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.returnPressed.connect(lambda: self.LineEdit_2.setFocus())
         self.LineEdit.returnPressed.connect(lambda: self.check_input(self.LineEdit, self.label_2.text().rstrip("：")))
         
+        # 重力加速度输入
+        self.LineEdit_4.returnPressed.connect(lambda: self.check_input(self.LineEdit_4, "重力加速度"))
+        self.LineEdit_4.returnPressed.connect(self.update_g_value)
+        self.LineEdit_4.returnPressed.connect(self.LineEdit_4.clear)  # 添加清空操作
+        
         # 迭代图按钮
         self.pushButton.clicked.connect(self.show_convergence_plot)
         self.ComboBox_2.currentIndexChanged.connect(self.clearall)
@@ -489,10 +514,10 @@ class main_window(QWidget, Ui_wetbulb):
         # 进一步计算
         self.listView.clicked.connect(self.on_list_item_clicked)
 
-    def createSuccessInfoBar(self,output_path):
+    def createSuccessInfoBar(self,message):
         InfoBar.success(
             title='处理成功！',
-            content=f"已存储至路径{output_path}",
+            content=f"{message}",
             orient=Qt.Horizontal,
             isClosable=True,
             position=InfoBarPosition.TOP,
@@ -541,6 +566,7 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.clear()
         self.LineEdit_2.clear()
         self.LineEdit_3.clear()
+        self.LineEdit_4.clear()
         self.calculator = None
 
     def take_screenshot(self):
@@ -604,6 +630,23 @@ class main_window(QWidget, Ui_wetbulb):
             ini = T - 2 if T < 0 else T - 5
             return ini
             
+    def update_g_value(self):
+        try:
+            g_input = float(self.LineEdit_4.text())
+            if g_input <= 0:
+                self.createErrorInfoBar("重力加速度必须大于0！")
+                self.LineEdit_4.clear()
+                return
+            global g
+            g = g_input
+            save_g_value(g)
+            self.LineEdit_4.setPlaceholderText(f"{g:.2f} m/s²")  # 直接更新placeholderText
+            self.LineEdit_4.clear()  # 清空输入框
+            self.createSuccessInfoBar(f"重力加速度已更新为 {g} m/s²")
+        except ValueError:
+            self.createErrorInfoBar("重力加速度必须是有效数字！")
+            self.LineEdit_4.clear()
+
     def check_input(self, line_edit, field_name):
         text = line_edit.text().strip()
         if not text:
@@ -629,6 +672,11 @@ class main_window(QWidget, Ui_wetbulb):
                     min_ui = self.prechange(500)
                     max_ui = self.prechange(1100)
                     self.createErrorInfoBar(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
+                    line_edit.clear()
+                    return False
+            elif "重力加速度" in field_name:
+                if value <= 0:
+                    self.createErrorInfoBar("重力加速度必须大于0！")
                     line_edit.clear()
                     return False
             elif "相对湿度" in field_name:
@@ -759,10 +807,10 @@ class main_window(QWidget, Ui_wetbulb):
             e = calculate_esat(Td, method_name)
             P_dry = P_hPa - e
 
-            ro_dry = P_dry*100/(Rd*T_g_K)  #***
-            ro_vapor = esw*100/(Rv*T_g_K)  # ***
-            ro = ro_dry + ro_vapor    # ***
-            dm = ro_vapor/ro_dry  # 含湿量就是混合率***
+            ro_dry = P_dry*100/(Rd*T_g_K)
+            ro_vapor = esw*100/(Rv*T_g_K)
+            ro = ro_dry + ro_vapor
+            dm = ro_vapor/ro_dry  # 含湿量就是混合率
             dm1 = dm*1000
             L_v = 2500.8-2.3665*T_g-0.0023*T_g**2+1.87e-5*T_g**3-4.2e-8*T_g**4  # 蒸发潜热
             han = Cp/1000*T_g+(L_v+Cpw/1000*T_g)*dm
@@ -774,11 +822,11 @@ class main_window(QWidget, Ui_wetbulb):
 
             sat_mixing_ratio = ups*(e/(P_hPa-e))*1000 if P_hPa > e else 0  # 饱和混合率 (g/kg)
             absolute_humidity = (e*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
-            specific_humidity = (ups*esw)/(P_hPa-(1-ups)*esw)*1000 if P_hPa > (1-ups)*esw else 0  # 比湿 (g/kg)**E*
+            specific_humidity = (ups*e)/(P_hPa-(1-ups)*e)*1000 if P_hPa > (1-ups)*e else 0  # 比湿 (g/kg)**E*
 
             q = specific_humidity/1000  # 比湿转kg/kg
-            virtual_temp_K = T_g_K*(1+upsilon*q)  # 精确系数0.6078
-            virtual_temp = self.tempchange(virtual_temp_K-273.15)  # 虚温
+            virtual_temp = T_g_K*(1+upsilon*q)  # 精确系数0.6078
+            virtual_temp1 = self.tempchange(virtual_temp-273.15)  # 虚温
 
             theta_K = T_g_K*(1000/P_hPa)**(Rd/Cp)
             theta = self.tempchange(theta_K-273.15)  # 位温THTA
@@ -789,9 +837,12 @@ class main_window(QWidget, Ui_wetbulb):
 
             # 计算LCL，避免可能的数学错误
             try:
-                t_lcl0 = 1/((1/(Td+273.15-55))-(math.log(rh)/2840))+55
-                t_lcl = self.tempchange(1/t_lcl0-243.5)
-                p_lcl0 = P_hPa*(t_lcl0+273.15/T_g_K)**(9.81/(Rd*9.81))
+                numerator = 1/(Td-56)
+                denominator = math.log(rh)/800
+                t_lcl0 = 1/(numerator-denominator)+56  # Bolton公式
+                t_lcl = self.tempchange(t_lcl0)
+                exponent = Cp/Rd
+                p_lcl0 = P_hPa*((t_lcl0+273.15)/T_g_K)**exponent
                 p_lcl = self.prechange(p_lcl0)
             except (ValueError, ZeroDivisionError):
                 t_lcl = float('nan')
@@ -814,7 +865,7 @@ class main_window(QWidget, Ui_wetbulb):
                 f"饱和混合率: {sat_mixing_ratio:.3f} g/kg", # ***
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
-                f"虚温: {virtual_temp:.2f} {self.temperature_unit}",
+                f"虚温: {virtual_temp1:.2f} {self.temperature_unit}",
                 f"虚位温: {theta_V:.2f} {self.temperature_unit}",
             ]
 
@@ -873,7 +924,6 @@ class main_window(QWidget, Ui_wetbulb):
             self.ProgressBar.setVisible(True)
             QApplication.processEvents()  # 确保进度条显示
 
-            total_rows = len(df)
             mode = self.ComboBox.currentIndex()  # 获取当前计算模式
 
             for index, row in df.iterrows():
@@ -923,10 +973,8 @@ class main_window(QWidget, Ui_wetbulb):
                         
                 except (ValueError, TypeError):
                     results.append(None if mode != 2 else [None, None])
-                
-                # 更新进度条
-                progress = int((index + 1) / total_rows * 100)
-                self.ProgressBar.setValue(progress)
+
+                time.sleep(0.01)
                 QApplication.processEvents()  # 确保界面更新
 
             # 根据模式设置结果列
@@ -962,7 +1010,7 @@ class main_window(QWidget, Ui_wetbulb):
             df.to_excel(output_path, index=False)
             
             self.ProgressBar.setVisible(False)
-            self.createSuccessInfoBar(str(output_path))
+            self.createSuccessInfoBar('已存储至路径'+str(output_path))
 
         except Exception as e:
             self.ProgressBar.setVisible(False)
