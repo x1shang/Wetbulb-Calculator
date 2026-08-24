@@ -4,6 +4,7 @@ import math
 import time
 import webbrowser
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import pandas as pd
 import openpyxl  # 添加Excel支持
 import json  # 添加json支持
@@ -17,6 +18,10 @@ from qfluentwidgets import TeachingTip,TeachingTipTailPosition,InfoBarIcon,ToolT
 from calculator1 import Ui_wetbulb
 from unit import Ui_Dia
 from about import Ui_Dialog
+
+# 设置中文字体支持
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 def load_g_value():
     try:
@@ -36,7 +41,8 @@ def save_g_value(g_value):
     except Exception as e:
         print(f"保存g值失败: {str(e)}")
 
-tag = "v1.2.0" # 1.2.0正式版@降水相态研究性学习小组
+
+tag = "v1.2.2" # 1.2.2安装包版@降水相态研究性学习小组
 tot = 1e-7
 g = load_g_value()
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
@@ -735,8 +741,26 @@ class main_window(QWidget, Ui_wetbulb):
                 output = self.calculator.show_results("露点温度")
                 
             elif mode == 2:  # 已知相对湿度同时求露点和湿球
+                # ==================== v1.2.1 Bug修复 ====================
+                # 【原Bug】已知相对湿度模式下，上方输入被赋给 rh（T_other 从未赋值），
+                # 但此处却调用 get_initial_guess(T, T_other)，
+                # 触发 "local variable 'T_other' referenced before assignment" 错误。
+                # 【修复方案】相对湿度模式下不存在“另一温度”输入，初值仅取决于
+                # 干球温度 T 与用户选择的初值策略（ComboBox_2）：
+                #   - Tw=Td 策略：以干球温度 T 作为湿球迭代起点（湿球温度必 ≤ 干球温度，
+                #     T 是物理上的上界，牛顿迭代从上方单调收敛，安全有效）；
+                #   - Tw=T-n 策略：不受影响，仍为 T-2（T<0 时）或 T-5。
+                # 【原代码（注释保留，不删除）】
+                # try:
+                #     initial_guess = self.get_initial_guess(T, T_other)
+                # except ValueError as e:
+                #     self.createErrorInfoBar(str(e))
+                #     return
+                # self.calculator = calculate_both(initial_guess, T, rh, P, tol=tot)
+                # output = self.calculator.show_results("露点温度", "湿球温度")
+                # =========================================================
                 try:
-                    initial_guess = self.get_initial_guess(T, T_other)
+                    initial_guess = self.get_initial_guess(T, T)  # v1.2.1: RH模式下无T_other，以T占位
                 except ValueError as e:
                     self.createErrorInfoBar(str(e))
                     return
@@ -799,6 +823,8 @@ class main_window(QWidget, Ui_wetbulb):
             Rd = 1000*R/Md  # 干空气
             Cp = 1004.7463+0.05*T_g  # 定压比热容（精确值）
             Cpw = 1864 # 水的定压比热容
+            Cv = Cp - R
+            Cvw = Cpw - R
             ups = Mv/Md
             upsilon = (1-ups)/ups
 
@@ -806,6 +832,12 @@ class main_window(QWidget, Ui_wetbulb):
             esw = calculate_esat(Tw, method_name)
             e = calculate_esat(Td, method_name)
             P_dry = P_hPa - e
+            x = e/P_hPa
+            gamma1 = (1-x)*Cp + x*Cpw
+            gamma2 = (1-x)*Cv + x*Cvw
+            gamma_mix = gamma1/gamma2
+            M_mix = ((1-x)*Md + x*Mv)/1000
+            v_sound = ((gamma_mix*R*T_g_K)/M_mix)**0.5 # 声速
 
             ro_dry = P_dry*100/(Rd*T_g_K)
             ro_vapor = esw*100/(Rv*T_g_K)
@@ -862,7 +894,7 @@ class main_window(QWidget, Ui_wetbulb):
                 f"焓值: {han:.2f} kJ/kg",
                 f"蒸发潜热: {L_v:.1f} kJ/kg",
                 f"含湿量: {dm1:.3f} g/kg",
-                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg", # ***
+                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
                 f"虚温: {virtual_temp1:.2f} {self.temperature_unit}",
@@ -877,6 +909,9 @@ class main_window(QWidget, Ui_wetbulb):
                 ]
 
             additional_info = [
+                f"水蒸气摩尔分数: {x*100:.1f} %",
+                f"湿空气绝热指数: {gamma_mix:.2f}",
+                f"空气中声速: {v_sound:.1f} m/s²",
                 f"湿球蒸气压: {esw1:.2f} {self.pressure_unit}",
             ]
 
@@ -889,12 +924,14 @@ class main_window(QWidget, Ui_wetbulb):
     def process_excel_file(self):
         try:
             hint = [
-                "欢迎使用批量计算功能！请确认：",
-                "A列为干球温度",
-                f"B列为{self.label_2.text().strip('：')}",
-                "C列为大气压强",
-                "单位与设置相同",
-                "\n关于具体如何使用，详见readme.txt"
+                "欢迎使用批量计算功能！",
+                "关于具体如何使用，详见README.md。 当前",
+                f"- A列为干球温度",
+                f"- B列为{self.label_2.text().strip('：')}",
+                f"- C列为大气压强",
+                "- 单位与设置相同",
+                f"- 正在使用Goff公式进行计算",
+                f"- 附加计算内容："
             ]
             self.list_model_2.setStringList(hint)
 
@@ -985,7 +1022,13 @@ class main_window(QWidget, Ui_wetbulb):
                 df['D'] = results
                 df = df.rename(columns={'D': '露点'})
             elif mode == 2:
-                df[['D', 'E']] = pd.DataFrame(results, columns=['露点', '湿球'])
+                # v1.2.2 修复：原写法 df[['D','E']]=pd.DataFrame(results,columns=['露点','湿球'])
+                # 在 pandas 1.3.5 下不会重命名列，导致输出列名为 D/E；
+                # 改为直接创建汉字列名，使 mode0/1/2 输出列名统一为汉字。
+                # 【原代码（注释保留，不删除）】
+                # df[['D', 'E']] = pd.DataFrame(results, columns=['露点', '湿球'])
+                df['露点'] = [r[0] if r else None for r in results]
+                df['湿球'] = [r[1] if r else None for r in results]
             
             # 添加单位信息到列名
             temp_unit = self.temperature_unit
