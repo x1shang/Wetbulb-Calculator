@@ -20,14 +20,38 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def cfg_file_path():
+    """配置文件定位（v1.3.0 新增，支持用户手动配置）：
+    打包成 exe 后，若 exe 旁边存在 cfg.json 则优先使用它（用户可直接编辑）；
+    否则退回打包内置(_MEIPASS)/开发目录中的 cfg.json。"""
+    if hasattr(sys, '_MEIPASS'):
+        side = os.path.join(os.path.dirname(sys.executable), 'cfg.json')
+        if os.path.exists(side):
+            return side
+    return resource_path('cfg.json')
+
 def load_g_value():
     try:
-        cfg_path = resource_path('cfg.json')
+        # cfg_path = resource_path('cfg.json')   # v1.3.0 起改用 cfg_file_path()，支持 exe 旁配置
+        cfg_path = cfg_file_path()
         with open(cfg_path, 'r') as f:
             config = json.load(f)
             return config.get('g', 9.81)
     except Exception:
         return 9.81
+
+def load_title_color():
+    """读取标题颜色（cfg.json 的 title_color，格式 "R, G, B"）。
+    未配置或格式非法时返回默认青色 rgb(71, 148, 157)。"""
+    default = "71, 148, 157"
+    try:
+        with open(cfg_file_path(), 'r') as f:
+            color = json.load(f).get('title_color')
+        if isinstance(color, str) and len(color.split(',')) == 3:
+            return color.strip()
+    except Exception:
+        pass
+    return default
 
 # 全局g值
 g = load_g_value()
@@ -57,10 +81,13 @@ class Ui_wetbulb(object):
         font.setUnderline(False)
         font.setWeight(75)
         self.label8.setFont(font)
-        self.label8.setStyleSheet("#label8 {\n"
-"    color: rgb(71, 148, 157);         /* 文本颜色 */\n"
-"    \n"
-"}")
+        title_color = load_title_color()  # v1.3.0: 标题颜色改由 cfg.json 的 title_color 配置（默认青色）
+        # 【原固定青色代码（v1.3.0 起改为可配置，注释保留）】
+        # self.label8.setStyleSheet("#label8 {\n"
+        # "    color: rgb(71, 148, 157);         /* 文本颜色 */\n"
+        # "    \n"
+        # "}")
+        self.label8.setStyleSheet(f"#label8 {{\n    color: rgb({title_color});         /* 文本颜色（cfg.json 可配置） */\n}}")
         self.label8.setObjectName("label8")
         self.horizontalLayout_6.addWidget(self.label8)
         spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
