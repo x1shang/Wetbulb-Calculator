@@ -25,19 +25,36 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
+def cfg_file_path(for_write=False):
+    """用户配置文件 cfg.json 的定位（支持手动配置）：
+    打包成 exe 后，若 exe 旁存在 cfg.json 则优先使用它；for_write=True
+    （保存配置）时始终写 exe 旁，保证用户修改持久化。
+    开发环境使用 resource_path()（脚本/工作目录）。"""
+    if hasattr(sys, '_MEIPASS'):
+        side = os.path.join(os.path.dirname(sys.executable), 'cfg.json')
+        if for_write or os.path.exists(side):
+            return side
+    return resource_path('cfg.json')
+
+def _read_cfg():
+    """读取整个 cfg.json；失败返回空 dict。"""
+    try:
+        with open(cfg_file_path(), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
 def load_g_value():
     """读 cfg.json 的重力加速度 g（格式 {"g": 9.81}），失败回退 9.81。"""
-    try:
-        with open(resource_path('cfg.json'), 'r') as f:
-            return json.load(f).get('g', 9.81)
-    except Exception:
-        return 9.81
+    return _read_cfg().get('g', 9.81)
 
 def save_g_value(g_value):
-    """把 g 写回 cfg.json。"""
+    """把 g 写回 cfg.json；保留文件中的其他键（如 title_color）。"""
     try:
-        with open(resource_path('cfg.json'), 'w') as f:
-            json.dump({'g': g_value}, f)
+        cfg = _read_cfg()
+        cfg['g'] = g_value
+        with open(cfg_file_path(for_write=True), 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"保存g值失败: {str(e)}")
 

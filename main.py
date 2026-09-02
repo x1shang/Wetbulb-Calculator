@@ -23,13 +23,26 @@ import json  # 添加json支持
 
 from PySide2.QtCore import QStringListModel, Qt
 from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog
-from PySide2.QtGui import QIcon
+from PySide2.QtGui import QIcon, QColor
 from qfluentwidgets import TeachingTip,TeachingTipTailPosition,InfoBarIcon,ToolTip,ToolTipFilter,ToolTipPosition,\
-    InfoBar,InfoBarPosition
+    InfoBar,InfoBarPosition,setThemeColor
 
-from calculator1 import Ui_wetbulb
+from calculator1 import Ui_wetbulb, load_title_color
 from unit import Ui_Dia
 from about import Ui_Dialog
+
+
+def _cfg_title_color():
+    """把 cfg.json 的 title_color（"R, G, B"）解析为 QColor。
+    qfluentwidgets 的强调色（主按钮/设置按钮/输入框点击后的颜色条等）
+    全部统一使用该颜色；解析失败时回退默认青色 rgb(71, 148, 157)。"""
+    try:
+        parts = [int(x.strip()) for x in load_title_color().split(',')]
+        if len(parts) == 3 and all(0 <= p <= 255 for p in parts):
+            return QColor(*parts)
+    except Exception:
+        pass
+    return QColor(71, 148, 157)
 
 
 # 设置中文字体支持
@@ -187,6 +200,10 @@ class main_window(QWidget, Ui_wetbulb):
         super().__init__()    #操作父级
         self.setupUi(self)
         self.setWindowIcon(QIcon(resource_path('app.ico')))
+        # v1.3.0: 全局强调色统一使用 cfg.json 的 title_color ——
+        # 使主按钮(pushButton_7 批量计算)、工具按钮(pushButton_5 设置)、
+        # 输入框点击后的颜色条、进度条等 qfluentwidgets 强调色控件全部与标题同色。
+        setThemeColor(_cfg_title_color())
         
         # 初始化变量
         self.calculator = None
