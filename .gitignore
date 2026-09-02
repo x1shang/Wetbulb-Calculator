@@ -1,0 +1,13 @@
+/.idea/*
+/.git/*
+/dist/*
+/build/*
+制造执行文件.txt
+*.xlsx
+/env/
+# 上面：Miniforge conda 环境（python3.10 + 依赖，体积大不入库）
+/__pycache__/*
+WetBulb_Calculator.py
+sample.py
+wetbulb注册表更改.md
+更新内容.md

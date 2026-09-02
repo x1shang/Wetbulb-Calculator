@@ -1,3 +1,15 @@
+# -*- coding: utf-8 -*-
+"""
+main.py — WetBulb Calculator 湿球计算器 · v1.3.0（程序入口）
+=================================================================
+本文件 = 原 WetBulb_Calculator.py 中【除计算引擎外的全部功能】：
+  - GUI 主窗口、事件绑定、输入校验、单位换算
+  - CalculatorMemory（结果/迭代存储与展示）
+  - 批量计算、扩展参数、关于/单位对话框
+所有计算（公式注册表、饱和蒸气压、牛顿迭代等）统一调用 core.py。
+计算函数通过 on_result / on_iter 回调把结果写回 CalculatorMemory。
+旧文件 WetBulb_Calculator.py 与 sample.py 保留不再使用。
+"""
 import sys
 import os
 import math
@@ -19,298 +31,44 @@ from calculator1 import Ui_wetbulb
 from unit import Ui_Dia
 from about import Ui_Dialog
 
+
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
-def load_g_value():
-    try:
-        cfg_path = resource_path('cfg.json')
-        with open(cfg_path, 'r') as f:
-            config = json.load(f)
-            return config.get('g', 9.81)
-    except Exception:
-        return 9.81
+# ======================================================================
+# 计算核心与配置统一由 core.py 提供（版本号、精度、重力加速度、公式引擎）
+# ======================================================================
+from core import (tag, tot, g, resource_path, save_g_value,
+                  calculate_esat, calculate_wetbulb, calculate_dewpoint, calculate_both)
 
-def save_g_value(g_value):
-    try:
-        cfg_path = resource_path('cfg.json')
-        config = {'g': g_value}
-        with open(cfg_path, 'w') as f:
-            json.dump(config, f)
-    except Exception as e:
-        print(f"保存g值失败: {str(e)}")
+# 【配置已移至 core.py，此处不再重复定义（旧代码注释保留）】
+# def load_g_value():
+#     try:
+#         cfg_path = resource_path('cfg.json')
+#         with open(cfg_path, 'r') as f:
+#             config = json.load(f)
+#             return config.get('g', 9.81)
+#     except Exception:
+#         return 9.81
+#
+# def save_g_value(g_value):
+#     try:
+#         cfg_path = resource_path('cfg.json')
+#         config = {'g': g_value}
+#         with open(cfg_path, 'w') as f:
+#             json.dump(config, f)
+#     except Exception as e:
+#         print(f"保存g值失败: {str(e)}")
 
+# tag = "v1.3.0 pre1" # 1.2.2安装包版@降水相态研究性学习小组（v1.3.0 起版本号统一在 core.py 定义）
 
-tag = "v1.2.2" # 1.2.2安装包版@降水相态研究性学习小组
-tot = 1e-7
-g = load_g_value()
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
-MAGNUS_FORMULAS = {
-    'Magnus-水面':lambda T:(6.112,17.62,243.12),
-    'August-水面':lambda T:(6.1094,17.625,243.04),
-    'Tetens-水面':lambda T:(6.1078,17.269,237.3),
-    'Buck-水面':lambda T:(6.1121,17.502,240.97),
-    'Arden-水面':lambda T:(6.1121,18.678,257.14),
-    'Magnus-冰面':lambda T:(6.112,22.46,272.62),
-    'Buck-冰面':lambda T:(6.1115,22.452,272.55),
-}
-
-GOFF_FORMULAS = {
-    'Goff-水面':lambda T:(273.15,10.79574,-5.02808,1.50475e-4,-8.2969,0.42873e-3,4.76955,0.78614,0),
-    'Goff2-水面':lambda T:(373.15,7.90298,-5.02808,1.3816e-5,-11.344,0.0081328,3.49149,3.0057149,0),
-    'Goff-冰面':lambda T:(273.15,9.09718,3.56654,0,0,0,0,0.78614,0.876793),
-}
-
-WEXLER_FORMULAS = {
-    'Wexler-水面':lambda T:(-5800.2206,1.3914993,-0.048640239,0.41764768e-4,-0.14452093e-7,0,6.5459673),
-    'Wexler-冰面':lambda T:(-5674.5359,6.3925247,-0.009677843,0.62215701e-6,0.20747825e-8,-0.9484024e-12,4.1635019),
-}
-
-methods = [
-    ('Goff-水面',lambda T_w:-10 <= T_w <= 100),
-    ('Wexler-水面',lambda T_w:-10 <= T_w <= 200),
-    ('Buck-水面',lambda T_w:0 <= T_w <= 80),
-    ('Tetens-水面',lambda T_w:0 <= T_w <= 50),
-    ('Magnus-水面',lambda T_w:0 <= T_w <= 60),
-    ('August-水面',lambda T_w:0 <= T_w <= 60),
-    ('Arden-水面',lambda T_w:0 <= T_w <= 100),
-    ('Gili-水面',lambda T_w:-10 <= T_w <= 20),
-    ('Goff2-水面',lambda T_w:-10 <= T_w <= 100),
-    ('Goff-冰面',lambda T_w:-100 <= T_w <= 10),
-    ('Wexler-冰面',lambda T_w:-150 <= T_w <= 10),
-    ('Magnus-冰面',lambda T_w:-65 <= T_w <= 0),
-    ('Buck-冰面',lambda T_w:-80 <= T_w <= 0),
-    ('Marti-冰面',lambda T_w:-150 <= T_w <= 0),
-]
-
-def resource_path(relative_path):
-    if hasattr(sys, '_MEIPASS'):
-        # 打包后的临时资源目录
-        base_path = sys._MEIPASS
-    else:
-        # 开发环境下的当前目录
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-def calculate_esat(T_w,method='Magnus-水面'):
-    T_k = T_w+273.15
-
-    if method in MAGNUS_FORMULAS:
-        A,B,C = MAGNUS_FORMULAS[method](T_w)
-        return A*math.exp(B*T_w/(C+T_w))
-
-    elif method in GOFF_FORMULAS:
-        A,B,C,D,E,F,G,H,I = GOFF_FORMULAS[method](T_w)
-        term1 = B*(1-A/T_k)
-        term2 = C*math.log10(T_k/A)
-        term3 = D*(1-10**(E*(T_k/A-1)))
-        term4 = F*(10**(G*(1-A/T_k))-1)
-        term5 = I*(1-T_k/A)
-        return 10**(term1+term2+term3+term4+term5+H)
-
-    elif method in WEXLER_FORMULAS:
-        A,B,C,D,E,F,G = WEXLER_FORMULAS[method](T_w)
-        term1 = A/T_k
-        term2 = B
-        term3 = C*T_k
-        term4 = D*T_k**2
-        term5 = E*T_k**3
-        term6 = F*T_k**4
-        term7 = G*math.log(T_k)
-        ln_esat = term1+term2+term3+term4+term5+term6+term7
-        return math.exp(ln_esat)/100
-
-    elif method == 'Gili-水面':
-        term1 = -3.142305*(1e3/T_k-1e3/373.16)
-        term2 = 8.2*math.log10(373.16/T_k)
-        term3 = -0.0024804*(373.16-T_k)
-        return 980.66*10**(0.00141966+term1+term2+term3)
-
-    elif method == 'Marti-冰面':
-        lg_esat = -2663.5/T_k+12.537
-        return 10**lg_esat/100
-
-    else:
-        raise ValueError("无效的计算方法")
-
-def calculate_dedt(T_w,method,delta=0.001):
-    T_k = T_w+273.15
-
-    if method in MAGNUS_FORMULAS:
-        A,B,C = MAGNUS_FORMULAS[method](T_w)
-        e_sat = calculate_esat(T_w,method)
-        return e_sat*(B*C)/(C+T_w)**2
-
-    elif method in GOFF_FORMULAS:
-        A,B,C,D,E,F,G,H,I = GOFF_FORMULAS[method](T_w)
-        term1 = B*A/T_k**2
-        term2 = C/A*math.log10(T_k/A)*math.log(10)
-        term3 = -D*E/A*math.log(10)*10**(E*(T_k/A-1))
-        term4 = A*F*G/T_k**2*10**(G*(1-A/T_k))*math.log(10)
-        term5 = -I/A
-        e_sat = calculate_esat(T_w,method)
-        return e_sat*math.log(10)*(term1+term2+term3+term4+term5)
-
-    elif method in WEXLER_FORMULAS:
-        e_sat = calculate_esat(T_w,method)
-        A,B,C,D,E,F,G = WEXLER_FORMULAS[method](T_w)
-        d_sat = -A/T_k**2+C+2*D*T_k+3*E*T_k**2+4*F*T_k**3+G/T_k
-        return e_sat*d_sat
-
-    elif method == 'Gili-水面':
-        term1 = -3.142305*(1e3/T_k-1e3/373.16)
-        term2 = 8.2*math.log10(373.16/T_k)
-        term3 = -0.0024804*(373.16-T_k)
-        term4 = 3142.305/T_k**2-3.561215/T_k+0.0024804
-        return 980.66*10**(0.00141966+term1+term2+term3)*math.log(10)*term4
-
-    elif method == 'Marti-冰面':
-        lg_esat = -2663.5/T_k+12.537
-        return 10**lg_esat/100*math.log(10)*2663.5/T_k**2
-
-    else:
-        e1 = calculate_esat(T_w-delta,method)
-        e2 = calculate_esat(T_w+delta,method)
-        return (e2-e1)/(2*delta)
-
-def esat_calculate(e,method,max_iter,tol,mint=-150,maxt=200):
-    if method in MAGNUS_FORMULAS:
-        A,B,C = MAGNUS_FORMULAS[method](e)
-        term1 = math.log(e/A)
-        return C*term1/(B-term1)
-
-    for iter_num in range(max_iter):
-        t = (mint+maxt)/2
-        ft = calculate_esat(t,method)-e
-        if abs(ft) < tol and not iter_num < 99:
-            return t
-        if ft > 0:
-            maxt = t
-        else:
-            mint = t
-    return (mint+maxt)/2
-
-def calculate_wetbulb(initial_guess,T,Td,P=1013.25,max_iter=50,tol=1e-6):
-    global f
-    calculator = CalculatorMemory()
-
-    for name,condition in methods:
-
-        e = calculate_esat(Td,name)
-        if not condition(initial_guess):
-            calculator.add_result(name,'不适用')
-            continue
-        T_w = initial_guess
-        for iter_num in range(max_iter):
-            try:
-                e_sat = calculate_esat(T_w,name)
-                gamma = 0.000667*(1+0.00115*T_w)*P
-                f = e_sat-gamma*(T-T_w)-e
-                de_dT = calculate_dedt(T_w,name,P)
-                df_dT = de_dT+gamma-0.000667*0.00115*P*(T-T_w)
-                T_w_new = T_w-f/df_dT
-                calculator.add_iteration(name,iter_num+1,T_w,abs(f))
-
-                if abs(T_w_new-T_w) < tol and not iter_num < 4:
-                    last_rh = e/calculate_esat(T,name)
-                    if 1 >= last_rh >= 0:
-                        calculator.add_result(name,T_w_new,rh=last_rh)
-                        break
-                    else:
-                        calculator.add_result(name,"结果不符常理")
-                        break
-
-                elif abs(f) > 1e3:
-                    calculator.add_result(name,"残差过大")
-                    break
-
-                T_w = T_w_new
-
-            except OverflowError:
-                calculator.add_result(name,'数值溢出')
-                break
-            except Exception as e:
-                calculator.add_result(name,f'错误: {str(e)}')
-                break
-            except:
-                calculator.add_result(name,'计算失败')
-                break
-        else:
-            calculator.add_result(name,'未收敛')
-            calculator.add_iteration(name,max_iter,T_w,abs(f))
-
-    return calculator
-
-def calculate_dewpoint(T_g,T_w,P,max_iter=500,tol=1e-6):
-    calculator = CalculatorMemory()
-    for name,condition in methods:
-        if not condition(T_w) and not condition(T_g):
-            calculator.add_result(name,'不适用')
-            continue
-
-        es_wet = calculate_esat(T_w,name)
-        es_dry = calculate_esat(T_g,name)
-        gamma = 0.000667*(1+0.00115*T_w)*P
-        e = es_wet-gamma*(T_g-T_w)
-        rh = e/es_dry
-        if e >= es_dry or rh >= 1:
-            calculator.add_result(name,T_g,rh=1)
-        else:
-            try:
-                Td = esat_calculate(e,name,max_iter,tol)
-                calculator.add_result(name,Td,rh=rh)
-            except ZeroDivisionError:
-                Td = T_g
-                calculator.add_result(name,Td,rh=rh)
-            except:
-                calculator.add_result(name,"计算失败")
-    return calculator
-
-def calculate_both(initial_guess, T_g, rh, P=1013.25, max_iter=50, tol=1e-6):
-    calculator = CalculatorMemory()
-    rh_decimal = rh / 100
-    for name, condition in methods:
-        if not condition(T_g):
-            calculator.add_result(name, '不适用')
-            continue
-            
-        try:
-            es_dry = calculate_esat(T_g, name)
-            e = es_dry * rh_decimal
-            Td = esat_calculate(e, name, max_iter, tol)
-            T_w = initial_guess
-            for iter_num in range(max_iter):
-                e_sat = calculate_esat(T_w, name)
-                gamma = 0.000667 * (1 + 0.00115 * T_w) * P
-                f = e_sat - gamma * (T_g - T_w) - e
-                de_dT = calculate_dedt(T_w, name, P)
-                df_dT = de_dT + gamma - 0.000667 * 0.00115 * P * (T_g - T_w)
-                T_w_new = T_w - f / df_dT
-                calculator.add_iteration(name, iter_num+1, T_w, abs(f))
-                
-                if abs(T_w_new - T_w) < tol and not iter_num < 4:
-                    calculator.add_result(name, Td, T_w_new)
-                    break
-                elif abs(f) > 1e3:
-                    calculator.add_result(name,Td, "湿球残差过大")
-                    break
-                    
-                T_w = T_w_new
-            else:
-                calculator.add_result(name, Td, '湿球未收敛')
-                
-        except OverflowError:
-            calculator.add_result(name, '数值溢出')
-        except Exception as e:
-            calculator.add_result(name, f'错误: {str(e)}')
-        except:
-            calculator.add_result(name, '计算失败')
-            
-    return calculator
-
+# ======================================================================
+# CalculatorMemory：存储各公式计算结果与迭代过程（供列表展示/收敛图）
+# ======================================================================
 class CalculatorMemory:
     def __init__(self):
         self.methods = []
@@ -421,6 +179,9 @@ class CalculatorMemory:
         plt.tight_layout()
         plt.show()
 
+# ======================================================================
+# 主窗口
+# ======================================================================
 class main_window(QWidget, Ui_wetbulb):
     def __init__(self):
         super().__init__()    #操作父级
@@ -695,6 +456,13 @@ class main_window(QWidget, Ui_wetbulb):
             line_edit.clear()
             return False
             
+    def _run_calc(self, fn, *args, **kwargs):
+        """调用 core.py 的计算函数，把结果/迭代通过回调写回 CalculatorMemory。"""
+        calc = CalculatorMemory()
+        fn(*args, on_result=lambda d: calc.add_result(d['method'], d['result1'], d['result2'], d['rh']),
+           on_iter=calc.add_iteration, **kwargs)
+        return calc
+
     def validate_and_calculate(self):
         try:
             if not self.check_input(self.LineEdit_3, "干球温度"):
@@ -733,38 +501,20 @@ class main_window(QWidget, Ui_wetbulb):
                 except ValueError as e:
                     self.createErrorInfoBar(str(e))
                     return
-                self.calculator = calculate_wetbulb(initial_guess, T, T_other, P, tol=tot)
+                self.calculator = self._run_calc(calculate_wetbulb, initial_guess, T, T_other, P, tol=tot)
                 output = self.calculator.show_results("湿球温度")
                 
             elif mode == 1:  # 已知湿球求露点
-                self.calculator = calculate_dewpoint(T, T_other, P, tol=tot)
+                self.calculator = self._run_calc(calculate_dewpoint, T, T_other, P, tol=tot)
                 output = self.calculator.show_results("露点温度")
                 
             elif mode == 2:  # 已知相对湿度同时求露点和湿球
-                # ==================== v1.2.1 Bug修复 ====================
-                # 【原Bug】已知相对湿度模式下，上方输入被赋给 rh（T_other 从未赋值），
-                # 但此处却调用 get_initial_guess(T, T_other)，
-                # 触发 "local variable 'T_other' referenced before assignment" 错误。
-                # 【修复方案】相对湿度模式下不存在“另一温度”输入，初值仅取决于
-                # 干球温度 T 与用户选择的初值策略（ComboBox_2）：
-                #   - Tw=Td 策略：以干球温度 T 作为湿球迭代起点（湿球温度必 ≤ 干球温度，
-                #     T 是物理上的上界，牛顿迭代从上方单调收敛，安全有效）；
-                #   - Tw=T-n 策略：不受影响，仍为 T-2（T<0 时）或 T-5。
-                # 【原代码（注释保留，不删除）】
-                # try:
-                #     initial_guess = self.get_initial_guess(T, T_other)
-                # except ValueError as e:
-                #     self.createErrorInfoBar(str(e))
-                #     return
-                # self.calculator = calculate_both(initial_guess, T, rh, P, tol=tot)
-                # output = self.calculator.show_results("露点温度", "湿球温度")
-                # =========================================================
                 try:
                     initial_guess = self.get_initial_guess(T, T)  # v1.2.1: RH模式下无T_other，以T占位
                 except ValueError as e:
                     self.createErrorInfoBar(str(e))
                     return
-                self.calculator = calculate_both(initial_guess, T, rh, P, tol=tot)
+                self.calculator = self._run_calc(calculate_both, initial_guess, T, rh, P, tol=tot)
                 output = self.calculator.show_results("露点温度", "湿球温度")
             
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
@@ -972,7 +722,7 @@ class main_window(QWidget, Ui_wetbulb):
                     if mode == 0:  # 已知露点求湿球
                         Td = self.changetemp(float(row['B']))
                         initial_guess = self.get_initial_guess(T, Td)
-                        calculator = calculate_wetbulb(initial_guess, T, Td, P)
+                        calculator = self._run_calc(calculate_wetbulb, initial_guess, T, Td, P)
                         # 查找Goff公式的结果
                         method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
                         for result in calculator.methods:
@@ -984,7 +734,7 @@ class main_window(QWidget, Ui_wetbulb):
                             
                     elif mode == 1:  # 已知湿球求露点
                         Tw = self.changetemp(float(row['B']))
-                        calculator = calculate_dewpoint(T, Tw, P)
+                        calculator = self._run_calc(calculate_dewpoint, T, Tw, P)
                         method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
                         for result in calculator.methods:
                             if result['method'] == method and isinstance(result['result1'], float):
@@ -996,7 +746,7 @@ class main_window(QWidget, Ui_wetbulb):
                     elif mode == 2:  # 已知相对湿度同时求露点和湿球
                         rh = float(row['B'])  # 相对湿度不需要单位转换
                         initial_guess = self.get_initial_guess(T, rh)
-                        calculator = calculate_both(initial_guess, T, rh, P)
+                        calculator = self._run_calc(calculate_both, initial_guess, T, rh, P)
                         method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
                         for result in calculator.methods:
                             if result['method'] == method:
@@ -1022,11 +772,6 @@ class main_window(QWidget, Ui_wetbulb):
                 df['D'] = results
                 df = df.rename(columns={'D': '露点'})
             elif mode == 2:
-                # v1.2.2 修复：原写法 df[['D','E']]=pd.DataFrame(results,columns=['露点','湿球'])
-                # 在 pandas 1.3.5 下不会重命名列，导致输出列名为 D/E；
-                # 改为直接创建汉字列名，使 mode0/1/2 输出列名统一为汉字。
-                # 【原代码（注释保留，不删除）】
-                # df[['D', 'E']] = pd.DataFrame(results, columns=['露点', '湿球'])
                 df['露点'] = [r[0] if r else None for r in results]
                 df['湿球'] = [r[1] if r else None for r in results]
             
