@@ -93,7 +93,8 @@ class Ui_Dialog(object):
         _translate = QtCore.QCoreApplication.translate
         Dialog.setWindowTitle(_translate("Dialog", "关于软件"))
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.0)"))  # v1.2.2 旧版本号注释保留
-        self.label.setText(_translate("Dialog", "湿球计算器（version1.2.2)"))
+        # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.2)"))  # v1.3.0 旧版本号注释保留
+        self.label.setText(_translate("Dialog", "湿球计算器（version1.3.0)"))
         self.label_2.setText(_translate("Dialog", "RDFZ降水相态研究性学习小组"))
         self.label_9.setText(_translate("Dialog", "朱嘉赫 王一博 刘思毅 制作"))
         self.label_3.setText(_translate("Dialog", "参考文献："))
