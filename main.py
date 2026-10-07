@@ -584,41 +584,41 @@ class main_window(QWidget, Ui_wetbulb):
             # 派生量统一交给 core.derive_moist_air（纯函数、无 GUI 依赖、可被 tests/ 覆盖）。
             # 旧版在 GUI 回调里手写这 60 行，其中比热容误用摩尔气体常数、
             # 水汽密度误用 esw、饱和混合率误用 e —— 详见 core.py 中的注释。
-            d = derive_moist_air(T_g, Tw, Td, rh, P_hPa, method_name)
+            derived = derive_moist_air(T_g, Tw, Td, rh, P_hPa, method_name)
 
-            es1 = self.prechange(d['es'])
-            esw1 = self.prechange(d['esw'])
-            e1 = self.prechange(d['e'])
-            P_dry1 = self.prechange(d['P_dry'])
+            es1 = self.prechange(derived['es'])
+            esw1 = self.prechange(derived['esw'])
+            e1 = self.prechange(derived['e'])
+            P_dry1 = self.prechange(derived['P_dry'])
 
-            virtual_temp1 = self.tempchange(d['virtual_temp_K'] - 273.15)  # 虚温
-            theta = self.tempchange(d['theta_K'] - 273.15)                 # 位温THTA
-            theta_E = self.tempchange(d['theta_e_K'] - 273.15)             # 相当位温THTE
-            theta_V = self.tempchange(d['theta_v_K'] - 273.15)             # 虚位温THTV
+            virtual_temp1 = self.tempchange(derived['virtual_temp_K'] - 273.15)  # 虚温
+            theta = self.tempchange(derived['theta_K'] - 273.15)                 # 位温THTA
+            theta_E = self.tempchange(derived['theta_e_K'] - 273.15)             # 相当位温THTE
+            theta_V = self.tempchange(derived['theta_v_K'] - 273.15)             # 虚位温THTV
 
             # 抬升凝结高度（Bolton 公式）；rh<=0 或不可解时 core 返回 nan
-            if math.isnan(d['t_lcl_C']):
+            if math.isnan(derived['t_lcl_C']):
                 t_lcl = float('nan')
                 p_lcl = float('nan')
             else:
-                t_lcl = self.tempchange(d['t_lcl_C'])
-                p_lcl = self.prechange(d['p_lcl_hPa'])
+                t_lcl = self.tempchange(derived['t_lcl_C'])
+                p_lcl = self.prechange(derived['p_lcl_hPa'])
 
             base_info = [
                 f"{method_name} | 常用气象参数",
                 f"相对湿度: {rh*100:.2f}%",
-                f"绝对湿度: {d['absolute_humidity']:.3f} g/m³",
-                f"比湿: {d['specific_humidity']:.3f} g/kg",
+                f"绝对湿度: {derived['absolute_humidity']:.3f} g/m³",
+                f"比湿: {derived['specific_humidity']:.3f} g/kg",
                 f"蒸气压: {e1:.2f} {self.pressure_unit}",
                 f"饱和蒸气压: {es1:.2f} {self.pressure_unit}",
                 f"干空气分压: {P_dry1:.1f} {self.pressure_unit}",
-                f"干空气密度: {d['ro_dry']:.3f} kg/m³",
-                f"水蒸气密度: {d['ro_vapor']:.3f} kg/m³",
-                f"空气密度: {d['ro']:.3f} kg/m³",
-                f"焓值: {d['han']:.2f} kJ/kg",
-                f"蒸发潜热: {d['L_v']:.1f} kJ/kg",
-                f"含湿量: {d['dm1']:.3f} g/kg",
-                f"饱和混合率: {d['sat_mixing_ratio']:.3f} g/kg",
+                f"干空气密度: {derived['ro_dry']:.3f} kg/m³",
+                f"水蒸气密度: {derived['ro_vapor']:.3f} kg/m³",
+                f"空气密度: {derived['ro']:.3f} kg/m³",
+                f"焓值: {derived['han']:.2f} kJ/kg",
+                f"蒸发潜热: {derived['L_v']:.1f} kJ/kg",
+                f"含湿量: {derived['dm1']:.3f} g/kg",
+                f"饱和混合率: {derived['sat_mixing_ratio']:.3f} g/kg",
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
                 f"虚温: {virtual_temp1:.2f} {self.temperature_unit}",
@@ -633,9 +633,9 @@ class main_window(QWidget, Ui_wetbulb):
                 ]
 
             additional_info = [
-                f"水蒸气摩尔分数: {d['x']*100:.1f} %",
-                f"湿空气绝热指数: {d['gamma_mix']:.2f}",
-                f"空气中声速: {d['v_sound']:.1f} m/s",
+                f"水蒸气摩尔分数: {derived['x']*100:.1f} %",
+                f"湿空气绝热指数: {derived['gamma_mix']:.2f}",
+                f"空气中声速: {derived['v_sound']:.1f} m/s",
                 f"湿球蒸气压: {esw1:.2f} {self.pressure_unit}",
             ]
 

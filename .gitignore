@@ -13,6 +13,10 @@
 __pycache__/
 *.pyc
 
+# 本地虚拟环境与测试缓存
+.venv*/
+/.pytest_cache/
+
 # 重构前的单文件版本（v1.3.0 起拆成 main.py + core.py）：留一条规则防止误加回来
 WetBulb_Calculator.py
 wetbulb注册表更改.md

@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 
 import pytest
 
@@ -171,3 +172,72 @@ def test_tag_constant_matches_release(tmp_path):
     """core.py 的 tag 是版本号的唯一来源，不能与其他文件里写的版本号打架。"""
     readme = _read('README.md')
     assert core.tag in readme, f"README 未提到当前版本 {core.tag}"
+
+
+def test_main_uses_only_existing_derive_keys():
+    """main.py 里每一处 derived['...'] 都必须是 derive_moist_air 真正返回的键。
+
+    GUI 不在 CI 覆盖范围内（装不上 PySide2），而这类拼写错只在用户点开
+    "扩展参数" 时才炸——所以用静态比对把它拦在提交之前。这条断言正是
+    为了守住"把 GUI 里的计算搬进 core 之后，GUI 侧仍取得到值"。
+    （main.py 里那个 24 键的派生量字典统一叫 derived，不与 `_run_calc` 回调里的
+    单字母 `d` 混淆，这样下面的正则才有确定的含义。）
+    """
+    src = _read('main.py')
+    used = set(re.findall(r"\bderived\['([A-Za-z_][A-Za-z0-9_]*)'\]", src))
+    assert used, "没有在 main.py 里找到任何 derived['...'] 取用（是不是又搬回 GUI 了？）"
+    returned = set(core.derive_moist_air(25.0, 20.0, 15.0, 0.54, 1013.25).keys())
+    missing = sorted(used - returned)
+    assert not missing, (
+        f"main.py 取了 derive_moist_air 不返回的键：{missing}；"
+        f"实际可用的键：{sorted(returned)}")
+    unused = sorted(returned - used)
+    assert len(unused) <= 4, (
+        f"core.derive_moist_air 返回了 {len(unused)} 个界面从不使用的键：{unused}"
+        f"——要么接上界面，要么从返回值里删掉")
+
+
+def test_main_import_still_works_when_gui_stack_is_available():
+    """若本机装齐了 GUI 依赖，则 `import main` 必须成功。
+
+    这是"空白机器照 README 能不能跑起来"的第一道闸（第二道是启动窗口）。
+    CI 上装不上 PySide2（只提供到 Python 3.10 的轮子），因此这里会 skip ——
+    它服务于本地提交前自查。按第 ⑤ 步建好 `.venv-build` 之后，它会自动开始跑。
+
+    解释器必须同时满足：Python ≤3.10（PySide2 有轮子）与 NumPy 1.x
+    （matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的）。
+    """
+    probe_src = textwrap.dedent('''
+        import importlib.util as u
+        ok = all(u.find_spec(m) for m in
+                 ("PySide2", "qfluentwidgets", "matplotlib", "pandas", "numpy"))
+        if ok:
+            import numpy
+            ok = numpy.__version__.split(".")[0] == "1"
+        print("READY" if ok else "MISSING")
+    ''')
+    candidates = [
+        os.environ.get('WETBULB_GUI_PYTHON'),                         # 手动指定（任意路径）
+        os.path.join(ROOT, '.venv-build', 'Scripts', 'python.exe'),   # 第⑤步建立的打包环境
+        sys.executable,
+        r'D:\dsh\init\.py310\python.exe',
+    ]
+    ready = None
+    for exe in candidates:
+        if not exe or not os.path.exists(exe):
+            continue
+        try:
+            probe = subprocess.run([exe, '-c', probe_src], capture_output=True, text=True,
+                                   timeout=240, encoding='utf-8', errors='replace')
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if 'READY' in (probe.stdout or ''):
+            ready = exe
+            break
+    if ready is None:
+        pytest.skip('本机没有装齐 GUI 依赖（PySide2 + NumPy 1.x）的解释器')
+    proc = subprocess.run([ready, '-c', 'import main; print("IMPORT_OK")'],
+                          cwd=ROOT, capture_output=True, text=True, timeout=300,
+                          encoding='utf-8', errors='replace')
+    assert 'IMPORT_OK' in (proc.stdout or ''), (
+        f"import main 失败（{ready}）：\n{proc.stdout}\n{proc.stderr}")
