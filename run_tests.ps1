@@ -24,15 +24,15 @@ function Step($name, $block) {
 }
 
 Step '语法检查（含 GUI 入口）' {
-    python -m py_compile main.py core.py calculator1.py unit.py about.py sample.py
+    python -m py_compile main.py src/core.py src/ui/calculator1.py src/ui/unit.py src/ui/about.py legacy/sample.py
 }
 
 Step '静态检查（未定义名/未使用导入）' {
-    python -m pyflakes core.py main.py
+    python -m pyflakes main.py src/core.py
 }
 
 Step '计算核心等价性回归' {
-    python core.py
+    python src/core.py
 }
 
 Step '计算核心正确性验证（对照公开参考值）' {

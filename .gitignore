@@ -1,23 +1,43 @@
-# 本地/构建产物：绝不入库（见 README「产物与授权政策」）
-/.idea/*
-/.git/*
-/dist/*
-/build/*
-制造执行文件.txt
+# ---------------------------------------------------------------------------
+# 仓库结构（v1.3.1 整理后）
+#   main.py           程序入口
+#   src/              Python 源码（core.py 与 ui/ 下的界面代码）
+#   assets/           图标、默认配置、截图
+#   examples/         批量计算的样例输入
+#   tests/ docs/      测试与文档
+#   legacy/           重构前的参考实现，不参与运行
+# ---------------------------------------------------------------------------
+
+# IDE / 编辑器
+/.idea/
+/.vscode/
+
+# 构建产物（绝不入库；见 README「产物与授权政策」）
+/dist/
+/build/
+*.spec
+*.pdb
+*.ilk
+
+# 批量计算的输入输出（examples/ 里的样例除外，见下方否定规则）
 *.xlsx
+!examples/example.xlsx
+
+# 环境
 /env/
 # 上面：Miniforge conda 环境（python3.10 + 依赖，体积大不入库）
+.venv*/
 
-# __pycache__ 会出现在任意层级（根目录、tests/、将来任何子包），
+# Python 字节码：__pycache__ 会出现在任意层级（根目录、src/、tests/ …），
 # 所以不能写成 /__pycache__/*（那样只会锚定到仓库根——正是"漏网之鱼"的经典成因）。
 __pycache__/
 *.pyc
 
-# 本地虚拟环境与测试缓存
-.venv*/
+# 测试与工具缓存
 /.pytest_cache/
 
-# 重构前的单文件版本（v1.3.0 起拆成 main.py + core.py）：留一条规则防止误加回来
+# 重构前的单文件版本（v1.3.0 起拆成 main.py + src/core.py）：留一条规则防止误加回来
 WetBulb_Calculator.py
 wetbulb注册表更改.md
 更新内容.md
+制造执行文件.txt

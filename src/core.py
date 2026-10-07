@@ -19,22 +19,41 @@ import math
 import json
 
 # ------------------------------ 配置 ------------------------------
+# 目录约定（v1.3.1 起的仓库结构）：
+#   src/      源码（本文件、src/ui/ 下的界面代码）
+#   assets/   图标与默认配置（app.ico / err.ico / cfg.json）
+#   tests/ docs/ legacy/ examples/
+APP_ICON = 'assets/app.ico'
+ERR_ICON = 'assets/err.ico'
+CFG_JSON = 'assets/cfg.json'
+
+
+def project_root():
+    """开发环境下的项目根目录（src/core.py 的上两级）。
+
+    用 __file__ 推导，而不是旧版的 os.path.abspath(".")：后者让"在哪个目录敲命令"
+    决定能不能找到图标与配置——从别处跑 `python src/main.py` 会静默丢图标。
+    """
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def resource_path(relative_path):
-    """资源定位：exe 打包后(_MEIPASS)与开发目录均可。"""
+    """资源定位：exe 打包后(_MEIPASS)与开发目录均可。
+    传入相对项目根的路径，例如 `resource_path(APP_ICON)`。"""
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(project_root(), relative_path)
 
 def cfg_file_path(for_write=False):
     """用户配置文件 cfg.json 的定位（支持手动配置）：
     打包成 exe 后，若 exe 旁存在 cfg.json 则优先使用它；for_write=True
     （保存配置）时始终写 exe 旁，保证用户修改持久化。
-    开发环境使用 resource_path()（脚本/工作目录）。"""
+    开发环境使用 resource_path(CFG_JSON)（即 assets/cfg.json）。"""
     if hasattr(sys, '_MEIPASS'):
         side = os.path.join(os.path.dirname(sys.executable), 'cfg.json')
         if for_write or os.path.exists(side):
             return side
-    return resource_path('cfg.json')
+    return resource_path(CFG_JSON)
 
 def _read_cfg():
     """读取整个 cfg.json；失败返回空 dict。"""
@@ -47,6 +66,18 @@ def _read_cfg():
 def load_g_value():
     """读 cfg.json 的重力加速度 g（格式 {"g": 9.81}），失败回退 9.81。"""
     return _read_cfg().get('g', 9.81)
+
+def load_title_color():
+    """读 cfg.json 的标题颜色 title_color（格式 "R, G, B"）；
+    未配置或格式非法时返回默认青色 rgb(71, 148, 157)。
+
+    v1.3.1 起本函数只在这里实现一次：此前 src/ui/calculator1.py 里有一份
+    逐字重复的副本，"配置到底读的是哪一份"取决于谁先被 import。
+    """
+    color = _read_cfg().get('title_color')
+    if isinstance(color, str) and len(color.split(',')) == 3:
+        return color.strip()
+    return "71, 148, 157"
 
 def save_g_value(g_value):
     """把 g 写回 cfg.json；保留文件中的其他键（如 title_color）。"""

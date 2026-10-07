@@ -16,39 +16,157 @@ import core
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 仓库结构（v1.3.1 起）。改结构就要改这张表——它是"我们声称的布局"的唯一出处。
+EXPECTED_LAYOUT = [
+    'main.py',
+    'src/core.py',
+    'src/ui/calculator1.py',
+    'src/ui/unit.py',
+    'src/ui/about.py',
+    'assets/app.ico',
+    'assets/err.ico',
+    'assets/cfg.json',
+    'assets/screenshots/k1.png',
+    'examples/example.xlsx',
+    'legacy/sample.py',
+    'tests/reference_values.py',
+    'docs/项目编年史.md',
+    'docs/改进操作说明书.md',
+    'docs/精度与参考文献.md',
+    'docs/GitHub-Actions-入门.md',
+    'README.md',
+    'README.en.md',
+    'LICENSE',
+    'requirements.txt',
+    'requirements-dev.txt',
+    'run_tests.ps1',
+    'conftest.py',
+    '.gitignore',
+    '.gitattributes',
+    '.github/workflows/tests.yml',
+]
+
+# 整理前散落在仓库根目录、现在必须已经归位的文件
+STALE_ROOT_FILES = [
+    'core.py', 'calculator1.py', 'unit.py', 'about.py', 'sample.py',
+    'app.ico', 'err.ico', 'cfg.json', 'test.xlsx', '制造执行文件.txt',
+    '项目编年史.md', '改进操作说明书.md',
+]
+
 
 def _read(rel):
     with open(os.path.join(ROOT, rel), encoding='utf-8') as f:
         return f.read()
 
 
+def _source_files():
+    """main.py 加上 src/ 下全部 .py（用于静态扫描）。路径统一用正斜杠。"""
+    files = ['main.py']
+    for dp, dirs, names in os.walk(os.path.join(ROOT, 'src')):
+        dirs[:] = [d for d in dirs if d != '__pycache__']
+        files += [os.path.relpath(os.path.join(dp, n), ROOT).replace(os.sep, '/')
+                  for n in names if n.endswith('.py')]
+    return sorted(files)
+
+
 def test_core_has_no_gui_dependencies():
     """core.py 必须保持零 GUI 依赖（审计肯定过的那条架构性质）。
     正是这一点让 CI 能在装不上 PySide2 的 Linux 空白机器上验证计算核心。"""
-    src = _read('core.py')
+    src = _read('src/core.py')
     for forbidden in ('PySide2', 'qfluentwidgets', 'matplotlib', 'pandas', 'numpy'):
         assert forbidden not in src, f"core.py 不应依赖 {forbidden}"
 
 
 def test_core_selfcheck_passes():
     """`python core.py` 是零依赖的等价性回归入口，必须能以 0 退出。"""
-    proc = subprocess.run([sys.executable, 'core.py'], cwd=ROOT,
+    proc = subprocess.run([sys.executable, 'src/core.py'], cwd=ROOT,
                           capture_output=True, text=True, timeout=120,
                           encoding='utf-8', errors='replace')
     assert proc.returncode == 0, f"core.py 自检失败：\n{proc.stdout}\n{proc.stderr}"
     assert 'OK' in proc.stdout
 
 
+def test_repository_layout_is_where_we_say_it_is():
+    """文件必须待在表格里说的地方，且不再散落在仓库根目录。"""
+    missing = [p for p in EXPECTED_LAYOUT if not os.path.exists(os.path.join(ROOT, p))]
+    assert not missing, "以下文件不在预期位置：\n" + "\n".join(missing)
+    stale = [p for p in STALE_ROOT_FILES if os.path.exists(os.path.join(ROOT, p))]
+    assert not stale, "以下文件仍散落在仓库根目录（应已归类）：\n" + "\n".join(stale)
+
+
+def test_every_resource_path_argument_exists():
+    """源码里每个 resource_path(...) 的实参都必须指向真实存在的文件。
+
+    resource_path 的失败是**静默**的：QIcon 找不到图标就只是不显示图标，
+    cfg.json 读不到就用默认值 —— 正因为它不报错，才必须用断言钉住。
+    这条测试就是为了守住"整理目录之后资源路径还对不对"。
+    """
+    consts = dict(re.findall(r"^([A-Z_][A-Z0-9_]*)\s*=\s*'([^']+)'",
+                             _read('src/core.py'), re.M))
+    checked, missing = 0, []
+    for rel in _source_files():
+        src = _read(rel)
+        # 跳过整行注释：注释里出现的 resource_path(...) 是历史说明，不是真实调用。
+        code = '\n'.join(ln for ln in src.splitlines() if not ln.lstrip().startswith('#'))
+        for arg in re.findall(r"resource_path\(\s*(?:'([^']+)'|([A-Z_][A-Z0-9_]*))\s*\)", code):
+            literal, name = arg
+            target = literal or consts.get(name)
+            if target is None:
+                missing.append(f"{rel}: 无法解析 resource_path({name})")
+                continue
+            checked += 1
+            if not os.path.exists(os.path.join(ROOT, target)):
+                missing.append(f"{rel}: resource_path({name or repr(literal)}) -> {target} 不存在")
+    assert checked >= 3, f"只找到 {checked} 处 resource_path(...)，扫描逻辑可能失效了"
+    assert not missing, "资源路径失效：\n" + "\n".join(missing)
+
+
+def test_config_helpers_are_defined_only_once():
+    """resource_path / cfg_file_path / load_title_color 只能在 core.py 里实现一次。
+
+    整理前 src/ui/calculator1.py 有一份逐字重复的副本，"配置到底读哪一份"
+    取决于谁先被 import —— 这种重复比错误更难发现。
+    """
+    owners = {'resource_path': [], 'cfg_file_path': [], 'load_title_color': []}
+    for rel in _source_files():
+        src = _read(rel)
+        for name in owners:
+            if re.search(rf'^def\s+{name}\s*\(', src, re.M):
+                owners[name].append(rel)
+    for name, where in owners.items():
+        assert where == ['src/core.py'], f"{name} 的定义出现在 {where}，应只在 src/core.py"
+
+
 def test_no_personal_absolute_paths():
-    """个人绝对路径（C:/Users/<用户名>/…）既泄露信息，也让别人无法复现构建。"""
+    """个人绝对路径（形如 C: 盘下的 Users 目录）既泄露信息，也让别人无法复现构建。
+
+    v1.3.1 起递归扫描全部子目录（此前只看仓库根），并跳过 .venv-build：
+    那是本地的虚拟环境，里面的绝对路径属于本机环境，不是仓库内容。
+    例外：定义这条检测的**本文件自身**被跳过 —— 它的正则字面量必然会命中自己。
+    """
     pattern = re.compile(r'[A-Za-z]:[\\/]Users[\\/][^\\/\s"\']+', re.IGNORECASE)
+    skip_dirs = {'.git', '.venv-build', '.venv', 'venv', '__pycache__',
+                 '.pytest_cache', '.idea', 'dist', 'build'}
+    skip_files = {os.path.abspath(__file__)}
+    exts = ('.py', '.md', '.json', '.txt', '.ps1', '.yml', '.yaml', '.cfg', '.toml')
     offenders = []
-    for name in os.listdir(ROOT):
-        if not name.endswith(('.py', '.md', '.json', '.txt', '.ps1', '.yml')):
-            continue
-        for i, line in enumerate(_read(name).splitlines(), 1):
-            if pattern.search(line):
-                offenders.append(f"{name}:{i}: {line.strip()}")
+    for dp, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        for name in names:
+            if not name.endswith(exts):
+                continue
+            path = os.path.join(dp, name)
+            if os.path.abspath(path) in skip_files:
+                continue
+            rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+            try:
+                with open(path, encoding='utf-8') as f:
+                    lines = f.read().splitlines()
+            except (UnicodeDecodeError, OSError):
+                continue
+            for i, line in enumerate(lines, 1):
+                if pattern.search(line):
+                    offenders.append(f"{rel}:{i}: {line.strip()}")
     assert not offenders, "发现个人绝对路径：\n" + "\n".join(offenders)
 
 
@@ -222,15 +340,12 @@ def test_main_uses_only_existing_derive_keys():
         f"——要么接上界面，要么从返回值里删掉")
 
 
-def test_main_import_still_works_when_gui_stack_is_available():
-    """若本机装齐了 GUI 依赖，则 `import main` 必须成功。
+def _gui_interpreter():
+    """找一个同时装齐 GUI 依赖与 NumPy 1.x 的解释器；找不到就返回 None。
 
-    这是"空白机器照 README 能不能跑起来"的第一道闸（第二道是启动窗口）。
-    CI 上装不上 PySide2（只提供到 Python 3.10 的轮子），因此这里会 skip ——
-    它服务于本地提交前自查。按第 ⑤ 步建好 `.venv-build` 之后，它会自动开始跑。
-
-    解释器必须同时满足：Python ≤3.10（PySide2 有轮子）与 NumPy 1.x
+    两个条件缺一不可：Python ≤3.10（PySide2 只提供到 3.10 的轮子）与 NumPy 1.x
     （matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的）。
+    CI 上两个都满足不了，所以依赖它的用例会 skip —— 它们服务于本地提交前自查。
     """
     probe_src = textwrap.dedent('''
         import importlib.util as u
@@ -243,11 +358,10 @@ def test_main_import_still_works_when_gui_stack_is_available():
     ''')
     candidates = [
         os.environ.get('WETBULB_GUI_PYTHON'),                         # 手动指定（任意路径）
-        os.path.join(ROOT, '.venv-build', 'Scripts', 'python.exe'),   # 第⑤步建立的打包环境
+        os.path.join(ROOT, '.venv-build', 'Scripts', 'python.exe'),   # 打包/自测用的 3.10 环境
         sys.executable,
         r'D:\dsh\init\.py310\python.exe',
     ]
-    ready = None
     for exe in candidates:
         if not exe or not os.path.exists(exe):
             continue
@@ -257,12 +371,69 @@ def test_main_import_still_works_when_gui_stack_is_available():
         except (OSError, subprocess.SubprocessError):
             continue
         if 'READY' in (probe.stdout or ''):
-            ready = exe
-            break
-    if ready is None:
+            return exe
+    return None
+
+
+def _run_with_gui(exe, code):
+    return subprocess.run([exe, '-c', code], cwd=ROOT, capture_output=True, text=True,
+                          timeout=300, encoding='utf-8', errors='replace')
+
+
+def test_main_import_still_works_when_gui_stack_is_available():
+    """若本机装齐了 GUI 依赖，则 `import main` 必须成功。
+
+    这是"空白机器照 README 能不能跑起来"的第一道闸，第二道见下一条
+    （真的把窗口构造出来）。本机没有合适解释器时 skip。
+    """
+    exe = _gui_interpreter()
+    if exe is None:
         pytest.skip('本机没有装齐 GUI 依赖（PySide2 + NumPy 1.x）的解释器')
-    proc = subprocess.run([ready, '-c', 'import main; print("IMPORT_OK")'],
-                          cwd=ROOT, capture_output=True, text=True, timeout=300,
-                          encoding='utf-8', errors='replace')
+    proc = _run_with_gui(exe, 'import main; print("IMPORT_OK")')
     assert 'IMPORT_OK' in (proc.stdout or ''), (
-        f"import main 失败（{ready}）：\n{proc.stdout}\n{proc.stderr}")
+        f"import main 失败（{exe}）：\n{proc.stdout}\n{proc.stderr}")
+
+
+def test_gui_windows_construct_offscreen():
+    """用 offscreen 平台把主窗口与两个对话框**真的构造一遍**（不进事件循环）。
+
+    这是 GUI 能被自动化覆盖到的极限，但覆盖的正是整理目录最容易改坏的东西：
+    资源路径（图标）、assets/cfg.json（主题色 / 重力加速度占位符）、
+    以及全部控件与信号连接。构造成功 = 这些路径都还是对的。
+    """
+    exe = _gui_interpreter()
+    if exe is None:
+        pytest.skip('本机没有装齐 GUI 依赖（PySide2 + NumPy 1.x）的解释器')
+    code = textwrap.dedent('''
+        import os, sys
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        import main
+        from PySide2.QtWidgets import QApplication
+        app = QApplication(sys.argv)
+        w = main.main_window()
+        w.show()
+        about = main.AboutDialog()
+        about.show()
+        unit = main.UnitDialog(w)
+        app.processEvents()
+        print("WINDOW_OK")
+        print("title=", w.windowTitle())
+        print("icon_null=", w.windowIcon().isNull())     # 图标没加载成功就会是 True
+        print("about_version=", about.label.text())
+        print("about_refs_chars=", len(about.references.toPlainText()))
+        print("about_refs_width=", about.references.width())
+        print("about_has_grades=", all(
+            k in about.references.toPlainText()
+            for k in ("WMO", "ASHRAE", "Stull", "Goff", "Wexler", "Buck", "周西华")))
+        print("unit_g_placeholder=", w.LineEdit_4.placeholderText())
+    ''')
+    proc = _run_with_gui(exe, code)
+    out = proc.stdout or ''
+    assert 'WINDOW_OK' in out, f"GUI 构造失败（{exe}）：\n{out}\n{proc.stderr}"
+    assert 'icon_null= False' in out, (
+        f"主窗口图标没加载成功 —— resource_path(APP_ICON) 多半指错了：\n{out}")
+    # 关于框里的参考文献必须是"真的写进去了"，而不是空白面板
+    assert 'about_has_grades= True' in out, (
+        f"关于框的参考文献面板缺内容（应包含 WMO/ASHRAE/Stull/Goff/Wexler/Buck 与周西华）：\n{out}")
+    assert 'about_refs_chars= 0' not in out, f"参考文献面板是空的：\n{out}"
+    assert 'unit_g_placeholder= 9.81' in out or 'unit_g_placeholder= ' in out, out

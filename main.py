@@ -6,15 +6,57 @@ main.py — WetBulb Calculator 湿球计算器 · v1.3.1（程序入口）
   - GUI 主窗口、事件绑定、输入校验、单位换算
   - CalculatorMemory（结果/迭代存储与展示）
   - 批量计算、扩展参数、关于/单位对话框
-所有计算（公式注册表、饱和蒸气压、牛顿迭代等）统一调用 core.py。
+所有计算（公式注册表、饱和蒸气压、牛顿迭代等）统一调用 src/core.py。
 计算函数通过 on_result / on_iter 回调把结果写回 CalculatorMemory。
-旧文件 WetBulb_Calculator.py 与 sample.py 保留不再使用。
+
+仓库结构（v1.3.1 起整理）：
+    main.py            本文件，程序入口
+    src/core.py        计算核心（零 GUI 依赖）
+    src/ui/*.py        pyuic5 生成的界面代码
+    assets/            图标与默认配置
+    tests/ docs/ legacy/ examples/
+运行：在项目根目录执行 `python main.py`（见 README「安装与运行」）。
 """
-import sys
 import os
+import sys
+
+# 让 src/ 与 src/ui/ 可被 import —— 这一步必须在导入 core / 界面模块之前完成。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.join(_HERE, 'src'), os.path.join(_HERE, 'src', 'ui')):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import math
 import time
 import webbrowser
+
+# ---------------------------------------------------------------------------
+# Windows 下"中文路径"会让 PySide2 找不到 Qt 平台插件（v1.3.1 修）
+#
+# 现象：项目放在含中文的目录（例如本仓库所在的 …\projpy\晴雨表\）时，程序启动即崩，
+# 退出码 0xC0000409，stderr 只有一句：
+#     qt.qpa.plugin: Could not find the Qt platform plugin "windows" in ""
+#     This application failed to start because no Qt platform plugin could be initialized.
+#
+# 根因：PySide2 把自己的包目录交给 Qt 时要经过一次窄字符(ANSI)转换，
+# 非 ASCII 的路径会变成 "???"：
+#     QLibraryInfo.location(PluginsPath) ->
+#     'D:/desktop/projpy/???/.venv-build/lib/site-packages/PySide2/plugins'   ← exists = False
+# 于是 Qt 的插件搜索路径是空的，连 qwindows.dll 都找不到。
+# 注意：`import main` 不会触发它（不需要平台插件），只有真正建 QApplication 才炸——
+# 所以"导入通过"不等于"能启动"。
+#
+# 修法：把真实路径显式写进 QT_PLUGIN_PATH（Qt 从环境变量读取原始 Unicode 字符串），
+# 绕开那次有损转换。已实测：设了变量就能在中文目录里正常启动。
+# 打包成 exe 后同样有效（exe 放在中文目录里也不会再崩）。
+try:
+    import PySide2 as _pyside2
+    _qt_plugins = os.path.join(os.path.dirname(os.path.abspath(_pyside2.__file__)), 'plugins')
+    if os.path.isdir(_qt_plugins):
+        os.environ.setdefault('QT_PLUGIN_PATH', _qt_plugins)
+except Exception:      # 没有 PySide2 时不影响其它检查（例如 CI 里只跑计算核心）
+    pass
+
 import matplotlib.pyplot as plt
 import pandas as pd
 # 注：读写 xlsx 依赖 openpyxl，由 requirements.txt 提供，pandas 会自行载入，无需在此 import。
@@ -24,7 +66,7 @@ from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDia
 from PySide2.QtGui import QIcon, QColor
 from qfluentwidgets import ToolTipFilter, ToolTipPosition, InfoBar, InfoBarPosition, setThemeColor
 
-from calculator1 import Ui_wetbulb, load_title_color
+from calculator1 import Ui_wetbulb
 from unit import Ui_Dia
 from about import Ui_Dialog
 
@@ -32,7 +74,9 @@ from about import Ui_Dialog
 def _cfg_title_color():
     """把 cfg.json 的 title_color（"R, G, B"）解析为 QColor。
     qfluentwidgets 的强调色（主按钮/设置按钮/输入框点击后的颜色条等）
-    全部统一使用该颜色；解析失败时回退默认青色 rgb(71, 148, 157)。"""
+    全部统一使用该颜色；解析失败时回退默认青色 rgb(71, 148, 157)。
+
+    load_title_color 只由 core.py 提供（此前 src/ui/calculator1.py 里有一份重复实现）。"""
     try:
         parts = [int(x.strip()) for x in load_title_color().split(',')]
         if len(parts) == 3 and all(0 <= p <= 255 for p in parts):
@@ -47,11 +91,11 @@ plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 # ======================================================================
-# 计算核心与配置统一由 core.py 提供（版本号、精度、重力加速度、公式引擎）
+# 计算核心与配置统一由 src/core.py 提供（版本号、精度、重力加速度、公式引擎）
 # ======================================================================
-from core import (tot as default_tol, resource_path, save_g_value,
-                  calculate_wetbulb, calculate_dewpoint, calculate_both,
-                  derive_moist_air)
+from core import (tot as default_tol, APP_ICON, resource_path, save_g_value,
+                  load_title_color, calculate_wetbulb, calculate_dewpoint,
+                  calculate_both, derive_moist_air)
 
 # 迭代容差（界面上"精度"滑条可调，见 update_tol）。初值取 core.py 的默认值，
 # 之后由**本模块自己持有**：
@@ -62,26 +106,10 @@ from core import (tot as default_tol, resource_path, save_g_value,
 #     提交在两个矩阵任务里得到相反结论，这本身就是该改写法的信号）。
 tot = default_tol
 
-# 【配置已移至 core.py，此处不再重复定义（旧代码注释保留）】
-# def load_g_value():
-#     try:
-#         cfg_path = resource_path('cfg.json')
-#         with open(cfg_path, 'r') as f:
-#             config = json.load(f)
-#             return config.get('g', 9.81)
-#     except Exception:
-#         return 9.81
-#
-# def save_g_value(g_value):
-#     try:
-#         cfg_path = resource_path('cfg.json')
-#         config = {'g': g_value}
-#         with open(cfg_path, 'w') as f:
-#             json.dump(config, f)
-#     except Exception as e:
-#         print(f"保存g值失败: {str(e)}")
-
-# tag = "v1.3.0 pre1" # 1.2.2安装包版@降水相态研究性学习小组（v1.3.0 起版本号统一在 core.py 定义）
+# 【已删除的死代码 · v1.3.1】此处原有 16 行被注释掉的 load_g_value / save_g_value 副本，
+# 引用的还是整理前的 `resource_path('cfg.json')`。配置读写现在只在 src/core.py 实现一次
+# （见 tests/test_repo_hygiene.py::test_config_helpers_are_defined_only_once）。
+# 版本号同理：v1.3.0 起只在 core.py 定义 `tag`。
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
@@ -206,7 +234,7 @@ class main_window(QWidget, Ui_wetbulb):
     def __init__(self):
         super().__init__()    #操作父级
         self.setupUi(self)
-        self.setWindowIcon(QIcon(resource_path('app.ico')))
+        self.setWindowIcon(QIcon(resource_path(APP_ICON)))
         # v1.3.0: 全局强调色统一使用 cfg.json 的 title_color ——
         # 使主按钮(pushButton_7 批量计算)、工具按钮(pushButton_5 设置)、
         # 输入框点击后的颜色条、进度条等 qfluentwidgets 强调色控件全部与标题同色。
@@ -805,7 +833,7 @@ class AboutDialog(QDialog, Ui_Dialog):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        self.setWindowIcon(QIcon(resource_path('app.ico')))
+        self.setWindowIcon(QIcon(resource_path(APP_ICON)))
         self.PushButton.clicked.connect(self.close)
         self.ToolButton.clicked.connect(lambda: webbrowser.open("https://github.com/x1shang/Wetbulb-Calculator"))
 
@@ -813,7 +841,7 @@ class UnitDialog(QDialog, Ui_Dia):
     def __init__(self, main_window):
         super().__init__()
         self.setupUi(self)
-        self.setWindowIcon(QIcon(resource_path('app.ico')))
+        self.setWindowIcon(QIcon(resource_path(APP_ICON)))
         self.main_window = main_window
         
         # 设置当前单位选中状态
@@ -891,7 +919,7 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
     app.setAttribute(Qt.AA_UseHighDpiPixmaps)  # 添加高DPI支持
-    app.setWindowIcon(QIcon(resource_path('app.ico')))  #图标设置
+    app.setWindowIcon(QIcon(resource_path(APP_ICON)))  #图标设置
 
     main_window = main_window()
     main_window.show()

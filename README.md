@@ -4,6 +4,8 @@
 
 ![tests](https://github.com/x1shang/Wetbulb-Calculator/actions/workflows/tests.yml/badge.svg)
 
+[English version →](README.en.md)
+
 开发团队：RDFZ 降水相态研究性学习小组
 
 ---
@@ -112,7 +114,15 @@
   批量计算路径同样受保护；不再出现 RH=0 时返回 −150 ℃ 这种"贴着边界的假数值"。
 - **修复**：公式适用域按真正参与计算的温度判定（此前按用户填的迭代初值判定，
   会出现冰面公式在 15 ℃ 露点下照常出数）。
-- **新增**：`tests/` 外部参照回归（243 条断言）+ GitHub Actions CI + `run_tests.ps1`。
+- **新增**：`tests/` 外部参照回归（247 条断言）+ GitHub Actions CI + `run_tests.ps1`。
+- **修复**：**放在含中文的目录里时程序根本启动不了**。PySide2 把自己的路径交给 Qt 时要过
+  一次窄字符（ANSI）转换，`…\晴雨表\` 会变成 `…\???\`，于是 `QLibraryInfo` 报出一个不存在的
+  插件目录，启动直接崩（`Could not find the Qt platform plugin "windows"`，退出码 `0xC0000409`）。
+  已改为把真实路径写进 `QT_PLUGIN_PATH` 绕开该转换——实测在中文目录下可正常启动。
+  注意 `import main` 不会触发它，只有真正建 `QApplication` 才炸。
+- **整理**：仓库目录归位（`src/`、`assets/`、`tests/`、`docs/`、`legacy/`、`examples/`），
+  删除本地 148 MB 构建产物（`dist/` 里的 exe 与 zip）；`calculator1.py` 里一份与 `core.py`
+  重复的配置读取代码合并到 `core.py` 一处。
 - **移除**：`pyuic5` 生成文件表头里的个人绝对路径。
 
 ### 1.3.0 更新内容！
@@ -156,12 +166,12 @@ pwsh -File run_tests.ps1
 ### 分开跑
 
 ```bash
-python core.py            # 等价性回归：确认重构没有改变 Goff-水面 的数值（零依赖）
-python -m pytest -q       # 正确性验证：对照 WMO/ASHRAE 公开参考值（243 条断言）
-python -m pyflakes core.py main.py   # 静态检查：未定义名 / 未使用导入
+python src/core.py            # 等价性回归：确认重构没有改变 Goff-水面 的数值（零依赖）
+python -m pytest -q           # 正确性验证：对照 WMO/ASHRAE 公开参考值（247 条断言）
+python -m pyflakes main.py src/core.py   # 静态检查：未定义名 / 未使用导入
 ```
 
-> 两者的分工很重要：`python core.py` 是**自我回归**（对照自己上一版的输出），
+> 两者的分工很重要：`python src/core.py` 是**自我回归**（对照自己上一版的输出），
 > 构造上发现不了继承来的系统偏差；**正确性必须由 `tests/` 里的外部参考值兜底**。
 
 ### CI
@@ -170,17 +180,26 @@ python -m pyflakes core.py main.py   # 静态检查：未定义名 / 未使用�
 Python 3.10 与 3.12 双版本 · 核心回归 · 参考值验证 · 全部源文件语法编译 · 静态检查。
 判定成败的唯一依据是**退出码**——不看任何打印信息（`print("验证通过")` 不是测试）。
 
+零基础教程见 [`docs/GitHub-Actions-入门.md`](docs/GitHub-Actions-入门.md)。
+
 ### 目录结构
 
 ```
-core.py                    计算核心：公式族/公式注册表、求解、输入校验、扩展参数（零 GUI 依赖）
-main.py                    程序入口：GUI、事件绑定、单位换算、批量计算
-calculator1.py unit.py about.py   pyuic5 由 .ui 生成的界面代码（勿手改）
-sample.py                  重构前的参考实现（保留备查，不参与运行）
-tests/                     外部参照回归（pytest）
-conftest.py                让 tests/ 能 import core
-run_tests.ps1              本地一键检查
+main.py                     程序入口：GUI、事件绑定、单位换算、批量计算
+src/core.py                 计算核心：公式族/公式注册表、求解、输入校验、扩展参数（零 GUI 依赖）
+src/ui/                     pyuic5 生成的界面代码（calculator1.py / unit.py / about.py，勿手改）
+assets/                     app.ico、err.ico、默认 cfg.json、界面截图
+examples/                   批量计算的样例输入（example.xlsx）
+tests/                      外部参照回归（pytest）
+docs/                       项目编年史、改进操作说明书、精度与参考文献、GitHub Actions 入门
+legacy/sample.py            重构前的参考实现（保留备查，不参与运行）
+conftest.py                 让 tests/ 能 import core
+run_tests.ps1               本地一键检查
 ```
+
+> 整理前这些文件全部散在仓库根目录，另有 148 MB 构建产物（`dist/` 里的 exe 与 zip）。
+> 归位后由 `tests/test_repo_hygiene.py::test_repository_layout_is_where_we_say_it_is`
+> 盯着——文件跑错地方会让 CI 变红。
 
 ### 新增公式
 
@@ -249,8 +268,12 @@ register_formula('名字', '族名', (系数…), 最低温, 最高温)
 6. **重力加速度设置不参与任何计算**：它只写入 `cfg.json` 并更新界面占位符。
    `v1.2.0` 的更新说明中"可以自定义本地重力加速度（使得计算结果更加准确）"这句话不成立。
 7. **批量计算不落盘中间结果**：整表处理完才写 `result_*.xlsx`，中途出错需重跑。
-8. **GUI 未纳入自动化测试**：`main.py` 依赖 PySide2，CI 只做语法编译。
-   界面交互（单位对话框、批量落盘）目前仍需人工验证。
+8. **GUI 只被覆盖到"能构造"这一层**：`main.py` 依赖 PySide2，CI 只做语法编译。
+   本机若有合适的 3.10 环境，`tests/test_repo_hygiene.py` 会用 offscreen 平台把主窗口与两个
+   对话框真的构造一遍（能抓住资源路径写错、配置读不到这类问题），但界面交互
+   （单位对话框、批量落盘）仍需人工验证。
+9. **中文/非 ASCII 路径**：v1.3.1 已修（见更新说明）。但同类问题的根源在 PySide2 自身，
+   如果将来升级到 PySide6，应重新验证一遍中文路径下的启动。
 
 ---
 
