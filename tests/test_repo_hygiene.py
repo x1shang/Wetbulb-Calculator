@@ -126,12 +126,45 @@ def test_runtime_requirements_do_not_pin_uninstallable_gui_stack():
     assert not any('pandas' in ln or 'matplotlib' in ln for ln in dev)
 
 
+def test_runtime_requirements_constrain_numpy_below_2():
+    """matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的 C 扩展，
+    元数据里只要求 numpy>=1.17、没有上界；不写上界，空白机器上 pip 会装
+    NumPy 2.x，程序连 `import matplotlib.pyplot` 都过不去。"""
+    numpy_lines = [ln.replace(' ', '') for ln in _requirement_lines(_read('requirements.txt'))
+                   if ln.lower().startswith('numpy')]
+    assert numpy_lines, "requirements.txt 必须显式约束 numpy（否则全新安装装到 NumPy 2.x 就崩）"
+    assert all('<2' in ln for ln in numpy_lines), \
+        f"numpy 必须有 <2 上界，实际是：{numpy_lines}"
+
+
 def test_readme_states_a_python_version_that_can_actually_install():
-    """README 曾写"Python 3.6+"，而 PySide2==5.15.2.1 在 3.11+ 上没有轮子。"""
+    """README 曾声称支持"Python 3.6 及以上"，而 PySide2==5.15.2.1 在 3.11+ 上没有轮子。"""
     readme = _read('README.md')
     assert '3.6+' not in readme, "README 不应再声称支持 Python 3.6+（PySide2 装不上）"
     m = re.search(r'Python\s*3\.(\d+)\s*[–~-]\s*3\.(\d+)', readme)
     assert m, "README 应写明实际支持的 Python 版本区间"
+
+
+def test_readme_test_count_matches_reality():
+    """README 里写的"N 条断言"必须等于实际收集到的用例数。
+
+    数字一过期，文档就开始骗人——而"文档里写着 236 条、实际只有 12 条"
+    正是审计报告批评的那类不一致。这里让它自动对账。
+    """
+    m = re.search(r'(\d+)\s*条断言', _read('README.md'))
+    assert m, "README 应写明测试用例数（例如「239 条断言」）"
+    claimed = int(m.group(1))
+
+    proc = subprocess.run([sys.executable, '-m', 'pytest', '-q', '--collect-only'],
+                          cwd=ROOT, capture_output=True, text=True, timeout=300,
+                          encoding='utf-8', errors='replace')
+    assert proc.returncode == 0, f"收集用例失败：\n{proc.stdout}\n{proc.stderr}"
+    found = re.search(r'(\d+)\s+tests?\s+collected', proc.stdout)
+    assert found, f"无法解析收集结果：{proc.stdout[-400:]}"
+    actual = int(found.group(1))
+    assert actual == claimed, (
+        f"README 写的是 {claimed} 条，实际收集到 {actual} 条 —— 请同步更新 README "
+        f"（「开发与验证」「1.3.1 更新内容」两处）")
 
 
 def test_tag_constant_matches_release(tmp_path):

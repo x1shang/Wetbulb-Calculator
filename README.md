@@ -112,7 +112,7 @@
   批量计算路径同样受保护；不再出现 RH=0 时返回 −150 ℃ 这种"贴着边界的假数值"。
 - **修复**：公式适用域按真正参与计算的温度判定（此前按用户填的迭代初值判定，
   会出现冰面公式在 15 ℃ 露点下照常出数）。
-- **新增**：`tests/` 外部参照回归（236 条断言）+ GitHub Actions CI + `run_tests.ps1`。
+- **新增**：`tests/` 外部参照回归（240 条断言）+ GitHub Actions CI + `run_tests.ps1`。
 - **移除**：`pyuic5` 生成文件表头里的个人绝对路径。
 
 ### 1.3.0 更新内容！
@@ -133,7 +133,11 @@
   pandas==1.3.5
   PySide2==5.15.2.1
   PySide2_Fluent_Widgets==1.7.6
+  numpy>=1.21,<2      # 必须加上界：matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的
   ```
+  > **NumPy 上界不能省**。这两个库的元数据只要求 `numpy>=1.17`、没有上界，空白机器上
+  > 会装到 NumPy 2.x，随后 `import matplotlib.pyplot` 直接报
+  > `AttributeError: _ARRAY_API not found`，程序起不来。
 - **只跑计算核心或测试不需要上面这些**：`core.py` 零第三方依赖，测试只需 `pytest`
   （`requirements-dev.txt`）。
 
@@ -153,7 +157,7 @@ pwsh -File run_tests.ps1
 
 ```bash
 python core.py            # 等价性回归：确认重构没有改变 Goff-水面 的数值（零依赖）
-python -m pytest -q       # 正确性验证：对照 WMO/ASHRAE 公开参考值（238 条断言）
+python -m pytest -q       # 正确性验证：对照 WMO/ASHRAE 公开参考值（240 条断言）
 python -m pyflakes core.py main.py   # 静态检查：未定义名 / 未使用导入
 ```
 

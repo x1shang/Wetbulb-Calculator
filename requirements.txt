@@ -12,3 +12,20 @@ openpyxl==3.1.3
 pandas==1.3.5
 PySide2==5.15.2.1
 PySide2_Fluent_Widgets==1.7.6
+
+# ---------------------------------------------------------------------------
+# NumPy 必须加上界（这一步不能省）：
+#
+# matplotlib 3.5.3 与 pandas 1.3.5 都是针对 NumPy 1.x 编译的 C 扩展，
+# 而它们的元数据只要求 numpy>=1.17、**没有上界**。因此在空白机器上
+# `pip install -r requirements.txt` 会装上 NumPy 2.x，然后：
+#
+#   AttributeError: _ARRAY_API not found
+#   ImportError: numpy.core.multiarray failed to import
+#
+# —— 程序连 `import matplotlib.pyplot` 都过不去（本机 D:\dsh\init\.py310 就复现了：
+# numpy 2.2.6 + matplotlib 3.5.3）。修法：pip install "numpy<2"
+#
+# 这里给范围而不是精确 pin：合适的 NumPy 版本取决于 Python 版本，
+# 真正要守住的是上界 <2 这条约束。
+numpy>=1.21,<2
