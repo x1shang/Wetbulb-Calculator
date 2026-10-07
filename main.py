@@ -49,9 +49,18 @@ plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 # ======================================================================
 # 计算核心与配置统一由 core.py 提供（版本号、精度、重力加速度、公式引擎）
 # ======================================================================
-from core import (tot, resource_path, save_g_value,
+from core import (tot as default_tol, resource_path, save_g_value,
                   calculate_wetbulb, calculate_dewpoint, calculate_both,
                   derive_moist_air)
+
+# 迭代容差（界面上"精度"滑条可调，见 update_tol）。初值取 core.py 的默认值，
+# 之后由**本模块自己持有**：
+#   - core 的计算函数是按 `tol=` 参数取值的，改 core.tot 不影响任何计算；
+#   - 旧版用 `global tot` 去改 core 的模块变量，既是死状态，也让静态检查
+#     分不清"导入的 tot"与"被赋值的 tot"（pyflakes 4.0.2 在 Python 3.12 上
+#     会把 `from core import tot` 报成 unused，3.10/3.11 上不报 —— 同一个
+#     提交在两个矩阵任务里得到相反结论，这本身就是该改写法的信号）。
+tot = default_tol
 
 # 【配置已移至 core.py，此处不再重复定义（旧代码注释保留）】
 # def load_g_value():
@@ -319,8 +328,14 @@ class main_window(QWidget, Ui_wetbulb):
         )
 
     def update_tol(self, value):
+        """界面上的"精度"滑条：把迭代容差设为 10^(-value)。
+
+        这里改的是**本模块的** tot（见文件顶部定义），不再用 `global` 去改
+        core.py 的模块变量 —— core 的计算函数是按 `tol=` 参数取值的，
+        改 `core.tot` 不会影响任何一次计算，只是死状态。
+        """
         global tot
-        tot = 10**(-value)
+        tot = 10 ** (-value)
 
     def update_input_labels(self):
         if self.ComboBox.currentIndex() == 0:  # 已知露点求湿球

@@ -174,6 +174,31 @@ def test_tag_constant_matches_release(tmp_path):
     assert core.tag in readme, f"README 未提到当前版本 {core.tag}"
 
 
+def test_main_does_not_rebind_core_globals():
+    """main.py 不得用 `global X` 去改从 core 导入的量。
+
+    这条规则是从一次真实的 CI 失败里总结出来的：
+    `global tot; tot = 10**(-value)` 让 pyflakes 4.0.2 在 **Python 3.12** 上把
+    `from core import tot` 报成 unused，而在 3.10/3.11 上不报——同一个提交在两个
+    矩阵任务里得到相反结论（CI 首次运行就是这样：3.10 全绿、3.12 红）。
+    根因是它同时是"死状态"：core 的计算函数按 `tol=` 参数取值，
+    改 core 的模块变量不影响任何一次计算。main.py 现在自己持有 `tot`。
+    """
+    src = _read('main.py')
+    imported = set()
+    for m in re.finditer(r'from core import \(([^)]*)\)', src, re.S):
+        for part in m.group(1).split(','):
+            part = part.strip()
+            if part:
+                imported.add(part.split(' as ')[-1].strip())
+    assert imported, "没有解析出 main.py 从 core 导入的名字"
+    declared_global = set(re.findall(r'^\s*global\s+([A-Za-z_][A-Za-z0-9_]*)', src, re.M))
+    clash = sorted(imported & declared_global)
+    assert not clash, (
+        f"main.py 用 global 重绑了从 core 导入的名字：{clash} —— "
+        f"那是死状态，且会让静态检查在不同 Python 版本上给出相反结论")
+
+
 def test_main_uses_only_existing_derive_keys():
     """main.py 里每一处 derived['...'] 都必须是 derive_moist_air 真正返回的键。
 
