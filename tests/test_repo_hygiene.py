@@ -31,15 +31,14 @@ EXPECTED_LAYOUT = [
     'legacy/sample.py',
     'tests/reference_values.py',
     'docs/项目编年史.md',
-    'docs/改进操作说明书.md',
     'docs/精度与参考文献.md',
-    'docs/GitHub-Actions-入门.md',
     'README.md',
     'README.en.md',
     'LICENSE',
     'requirements.txt',
     'requirements-dev.txt',
     'run_tests.ps1',
+    'build.ps1',
     'conftest.py',
     '.gitignore',
     '.gitattributes',
@@ -290,6 +289,63 @@ def test_tag_constant_matches_release(tmp_path):
     """core.py 的 tag 是版本号的唯一来源，不能与其他文件里写的版本号打架。"""
     readme = _read('README.md')
     assert core.tag in readme, f"README 未提到当前版本 {core.tag}"
+
+
+def test_gui_full_calculation_flow():
+    """在 offscreen 平台走一遍**完整计算流程**（两种模式），断言结果真的显示出来了。
+
+    这一条是 B-07 的回归测试。原缺陷：`CalculatorMemory.show_results` 读模块全局
+    `main_window.temperature_unit`，而那个全局只在"以 __main__ 运行"时是**实例**
+    （文件底部 `main_window = main_window()` 把类名覆盖掉了）；一旦被 import，
+    它就是**类**，取属性抛 AttributeError，而 validate_and_calculate 的兜底 except
+    把异常变成一条错误条 —— **界面什么都不显示，也不报错**。
+    所以这里的断言是 rows > 0，而不只是"没抛异常"。
+    """
+    exe = _gui_interpreter()
+    if exe is None:
+        pytest.skip('本机没有装齐 GUI 依赖（PySide2 + NumPy 1.x）的解释器')
+    code = textwrap.dedent('''
+        import os, sys
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        import main
+        from PySide2.QtWidgets import QApplication
+        app = QApplication(sys.argv)
+        main.main_window.createErrorInfoBar = lambda self, msg, *a, **k: print("ERRBAR:", msg)
+        w = main.main_window()
+        w.show()
+
+        # 模式 0：已知露点求湿球
+        w.ComboBox.setCurrentIndex(0)
+        w.LineEdit_3.setText("25"); w.LineEdit.setText("15"); w.LineEdit_2.setText("1013.25")
+        app.processEvents()
+        w.validate_and_calculate()
+        app.processEvents()
+        rows0 = w.list_model.stringList()
+        print("MODE0_ROWS", len(rows0))
+        print("MODE0_GOFF", [r for r in rows0 if r.startswith("Goff-水面")])
+
+        # 模式 2：已知相对湿度同时求露点与湿球
+        # 注意：ComboBox 的 currentIndexChanged 同时连了 clearall()，切模式会清空输入框
+        # （这是设计如此），所以三个输入框都要在切换之后重新填。
+        w.ComboBox.setCurrentIndex(2)
+        app.processEvents()
+        w.LineEdit_3.setText("25"); w.LineEdit.setText("60"); w.LineEdit_2.setText("1013.25")
+        app.processEvents()
+        w.validate_and_calculate()
+        app.processEvents()
+        rows2 = w.list_model.stringList()
+        print("MODE2_ROWS", len(rows2))
+        print("MODE2_GOFF", [r for r in rows2 if r.startswith("Goff-水面")])
+    ''')
+    proc = _run_with_gui(exe, code)
+    out = proc.stdout or ''
+    assert 'ERRBAR' not in out, f"计算过程弹出了错误条（说明异常被吞掉了）：\n{out}"
+    # 表头 1 行 + 14 条公式；注意列表末尾还有一行空串，所以是 16
+    assert 'MODE0_ROWS 16' in out, f"模式0 没有把结果填进列表：\n{out}"
+    assert 'MODE2_ROWS 16' in out, f"模式2 没有把结果填进列表：\n{out}"
+    # 数值锚点：与 docs/项目编年史.md 记录的实测值一致（干 25 / 露 15 → Goff-水面 18.6186 ℃）
+    assert "MODE0_GOFF ['Goff-水面:  18.6186℃  " in out, (
+        f"模式0 的 Goff-水面 结果与编年史记录的 18.6186 不一致：\n{out}")
 
 
 def test_main_does_not_rebind_core_globals():

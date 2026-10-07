@@ -114,7 +114,7 @@
   批量计算路径同样受保护；不再出现 RH=0 时返回 −150 ℃ 这种"贴着边界的假数值"。
 - **修复**：公式适用域按真正参与计算的温度判定（此前按用户填的迭代初值判定，
   会出现冰面公式在 15 ℃ 露点下照常出数）。
-- **新增**：`tests/` 外部参照回归（247 条断言）+ GitHub Actions CI + `run_tests.ps1`。
+- **新增**：`tests/` 外部参照回归（248 条断言）+ GitHub Actions CI + `run_tests.ps1`。
 - **修复**：**放在含中文的目录里时程序根本启动不了**。PySide2 把自己的路径交给 Qt 时要过
   一次窄字符（ANSI）转换，`…\晴雨表\` 会变成 `…\???\`，于是 `QLibraryInfo` 报出一个不存在的
   插件目录，启动直接崩（`Could not find the Qt platform plugin "windows"`，退出码 `0xC0000409`）。
@@ -167,7 +167,7 @@ pwsh -File run_tests.ps1
 
 ```bash
 python src/core.py            # 等价性回归：确认重构没有改变 Goff-水面 的数值（零依赖）
-python -m pytest -q           # 正确性验证：对照 WMO/ASHRAE 公开参考值（247 条断言）
+python -m pytest -q           # 正确性验证：对照 WMO/ASHRAE 公开参考值（248 条断言）
 python -m pyflakes main.py src/core.py   # 静态检查：未定义名 / 未使用导入
 ```
 
@@ -180,7 +180,14 @@ python -m pyflakes main.py src/core.py   # 静态检查：未定义名 / 未使�
 Python 3.10 与 3.12 双版本 · 核心回归 · 参考值验证 · 全部源文件语法编译 · 静态检查。
 判定成败的唯一依据是**退出码**——不看任何打印信息（`print("验证通过")` 不是测试）。
 
-零基础教程见 [`docs/GitHub-Actions-入门.md`](docs/GitHub-Actions-入门.md)。
+**顶部那个绿色徽章**就是从这次运行来的，它不是图片文件，而是一个实时生成的 SVG：
+
+```
+https://github.com/<用户>/<仓库>/actions/workflows/<工作流文件名>/badge.svg
+```
+
+README 里写一行 `![tests](上面这个地址)` 就出现徽章；CI 通过显示 `passing`（绿），
+失败显示 `failing`（红）。注意 URL 里用的是**文件名**（`tests.yml`），不是 `name:` 里的名字。
 
 ### 目录结构
 
@@ -191,11 +198,33 @@ src/ui/                     pyuic5 生成的界面代码（calculator1.py / unit
 assets/                     app.ico、err.ico、默认 cfg.json、界面截图
 examples/                   批量计算的样例输入（example.xlsx）
 tests/                      外部参照回归（pytest）
-docs/                       项目编年史、改进操作说明书、精度与参考文献、GitHub Actions 入门
+docs/                       项目编年史、精度与参考文献
 legacy/sample.py            重构前的参考实现（保留备查，不参与运行）
 conftest.py                 让 tests/ 能 import core
 run_tests.ps1               本地一键检查
+build.ps1                   本地打包 exe（见「打包」一节）
 ```
+
+### 打包（构建 exe）
+
+```powershell
+pwsh -File build.ps1
+```
+
+脚本会自己挑一个合格的 Python 环境、先跑测试、再打包，最后打印大小与 SHA256。
+
+> ⚠️ **唯一的硬性要求：打包用的解释器必须在纯 ASCII 路径下。**
+> PySide2 把自己的包目录交给 Qt 时要过一次窄字符转换，非 ASCII 路径会变成 `???`，
+> PyInstaller 的 Qt 钩子随即报 `Qt plugin directory '.../???/...' does not exist!`。
+>
+> 实测两点（想省时间可以直接信）：
+> - 给 PyInstaller 设 `QT_PLUGIN_PATH` **没用**——那个变量只影响程序运行时加载插件，
+>   不影响 `QLibraryInfo` 返回什么；
+> - **项目目录是不是中文无所谓**，只有解释器的路径必须干净。
+>   所以本仓库里的 `.venv-build`（路径含"晴雨表"）不能用来打包，`build.ps1` 会自动跳过它。
+>
+> 另外：PyInstaller 产物**不是逐位可复现**的，不同构建路径/时间会给出不同 SHA256。
+> release 说明里的哈希只能证明"你下载到的是当次构建的那个文件"。
 
 > 整理前这些文件全部散在仓库根目录，另有 148 MB 构建产物（`dist/` 里的 exe 与 zip）。
 > 归位后由 `tests/test_repo_hygiene.py::test_repository_layout_is_where_we_say_it_is`
@@ -280,7 +309,7 @@ register_formula('名字', '族名', (系数…), 最低温, 最高温)
     `A = 6.53×10⁻⁴(1+0.000944·t_w)`（水面）/ `5.75×10⁻⁴`（冰面）。
     实测换成 WMO 系数后，与 ASHRAE 定义式的偏差由 **0.452 K 降到 0.265 K**。
     之所以没改：WMO 对水面与冰面给的是**两个不同的 A**，而本站目前不区分相态——
-    0 ℃ 以下该用哪一个，属于相态判断。**待定，见 `docs/改进操作说明书.md` 第 4 节。**
+    0 ℃ 以下该用哪一个，属于相态判断。**待定。**
 11. **`Gili-水面` 的指数里有一个查不到出处的项**：`+0.00141966`。
     同族公式在中文暖通/冷却塔文献中**没有**这一项（那里的常数是 `2.0057173 = lg 101.325`，
     P 单位 kPa——反过来证实了 v1.3.1 的前因子修正方向正确）。

@@ -139,7 +139,7 @@ Do **not** use `v1.0.0`, `v1.0.1` or `v1.2.0`: they contain serious bugs.
   `Could not find the Qt platform plugin "windows"`. Fixed by exporting the real path via
   `QT_PLUGIN_PATH`. Details in `main.py`.
 - **Added** — engine-level input validation; applicability determined by the temperatures
-  actually used; `tests/` with external-reference regression (247 assertions); GitHub
+  actually used; `tests/` with external-reference regression (248 assertions); GitHub
   Actions CI; `run_tests.ps1`.
 
 ### Source dependencies
@@ -189,7 +189,7 @@ correctness verification against published reference values.
 
 ```bash
 python src/core.py                   # equivalence regression (stdlib only)
-python -m pytest -q                  # correctness vs WMO/ASHRAE references (247 assertions)
+python -m pytest -q                  # correctness vs WMO/ASHRAE references (248 assertions)
 python -m pyflakes main.py src/core.py   # undefined names / unused imports
 ```
 
@@ -205,6 +205,39 @@ compilation of every source file, and static analysis. **The only thing that dec
 pass/fail is the exit code** — no printed message is read, because `print("verified")` is
 not a test.
 
+**The green badge at the top** comes from that run. It is not an image file but a live SVG:
+
+```
+https://github.com/<user>/<repo>/actions/workflows/<workflow-filename>/badge.svg
+```
+
+One line in the README (`![tests](that-url)`) renders it; it reads `passing` (green) when CI
+passes and `failing` (red) when it does not. Note the URL uses the **file name**
+(`tests.yml`), not the `name:` inside the workflow.
+
+### Building the exe
+
+```powershell
+pwsh -File build.ps1
+```
+
+The script picks a suitable Python environment, runs the tests first, builds, and prints the
+size and SHA256.
+
+> ⚠️ **The one hard requirement: the packaging interpreter must live on a pure-ASCII path.**
+> PySide2 passes its own package directory through a narrow-character conversion, so a
+> non-ASCII path turns into `???`, and PyInstaller's Qt hook then fails with
+> `Qt plugin directory '.../???/...' does not exist!`.
+>
+> Two measured facts worth not re-discovering: exporting `QT_PLUGIN_PATH` **does not help** —
+> that variable only affects plugin *loading* at runtime, not what `QLibraryInfo` returns;
+> and the **project** path being non-ASCII is fine, only the interpreter's path must be clean.
+> Hence `.venv-build` inside this repo cannot be used for packaging, and the script skips it.
+>
+> Also: PyInstaller output is **not bit-reproducible** — different build paths or times give
+> different SHA256 values. The hash in a release note only proves that the file you downloaded
+> is the one that was built.
+
 ### Repository layout
 
 ```
@@ -219,6 +252,7 @@ docs/              project chronicle, improvement handbook, references, CI prime
 legacy/sample.py   pre-refactor reference implementation (kept for reading, unused)
 conftest.py        lets tests/ import core
 run_tests.ps1      local one-command check
+build.ps1          local exe packaging (see "Building the exe")
 ```
 
 ### Adding a formula

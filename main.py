@@ -130,37 +130,46 @@ class CalculatorMemory:
             "rh": rh
         })
 
-    def show_results(self, mode1, mode2=None):
+    def show_results(self, mode1, mode2=None, temperature_unit='℃'):
+        """把结果格式化成多行文本。
+
+        temperature_unit 由调用方显式传入（原来是读模块全局 `main_window.temperature_unit`）：
+        那个写法只在"以 __main__ 运行"时成立——因为文件底部的 `main_window = main_window()`
+        会把模块全局从**类**换成**实例**；一旦有人 `import main` 再用，
+        `main_window` 仍是类，取 `.temperature_unit` 就抛 AttributeError，
+        而 validate_and_calculate 的兜底 except 会把它变成一个错误条 —— **计算静默地什么都不显示**。
+        （这就是编年史 Bug 档案里的 B-07，v1.3.1 修。）
+        """
         if mode2:
             output = f"计算公式 | {mode1} | {mode2}:\n"
         else:
             output = f"计算公式 | {mode1} | 相对湿度:\n"
-            
+
         for item in self.methods:
             result1 = item['result1']
             result2 = item.get('result2')
 
             if isinstance(result1, float):
-                if main_window.temperature_unit == 'K':
+                if temperature_unit == 'K':
                     display_temp1 = result1 + 273.15
-                elif main_window.temperature_unit == '℉':
+                elif temperature_unit == '℉':
                     display_temp1 = result1 * 9/5 + 32
                 else:
                     display_temp1 = result1
-                    
-                result1_str = f"{display_temp1:.4f}{main_window.temperature_unit}"
+
+                result1_str = f"{display_temp1:.4f}{temperature_unit}"
             else:
                 result1_str = f"{result1}"
 
             if result2 is not None:
                 if isinstance(result2, float):
-                    if main_window.temperature_unit == 'K':
+                    if temperature_unit == 'K':
                         display_temp2 = result2 + 273.15
-                    elif main_window.temperature_unit == '℉':
+                    elif temperature_unit == '℉':
                         display_temp2 = result2 * 9/5 + 32
                     else:
                         display_temp2 = result2
-                    result2_str = f"{display_temp2:.4f}{main_window.temperature_unit}"
+                    result2_str = f"{display_temp2:.4f}{temperature_unit}"
                 else:
                     result2_str = f"{result2}"
 
@@ -561,11 +570,11 @@ class main_window(QWidget, Ui_wetbulb):
                     self.createErrorInfoBar(str(e))
                     return
                 self.calculator = self._run_calc(calculate_wetbulb, initial_guess, T, T_other, P, tol=tot)
-                output = self.calculator.show_results("湿球温度")
+                output = self.calculator.show_results("湿球温度", temperature_unit=self.temperature_unit)
                 
             elif mode == 1:  # 已知湿球求露点
                 self.calculator = self._run_calc(calculate_dewpoint, T, T_other, P, tol=tot)
-                output = self.calculator.show_results("露点温度")
+                output = self.calculator.show_results("露点温度", temperature_unit=self.temperature_unit)
                 
             elif mode == 2:  # 已知相对湿度同时求露点和湿球
                 try:
@@ -574,7 +583,7 @@ class main_window(QWidget, Ui_wetbulb):
                     self.createErrorInfoBar(str(e))
                     return
                 self.calculator = self._run_calc(calculate_both, initial_guess, T, rh, P, tol=tot)
-                output = self.calculator.show_results("露点温度", "湿球温度")
+                output = self.calculator.show_results("露点温度", "湿球温度", temperature_unit=self.temperature_unit)
             
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
 
