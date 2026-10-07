@@ -1,3 +1,12 @@
+# 运行/打包依赖（与 v1.3.0 的构建环境一致）
+#
+# 环境要求：Python 3.6 ~ 3.10，**推荐 3.10**。
+# 原因：PySide2==5.15.2.1 只发布到 Python 3.10 的轮子，3.11+ 上 pip 装不上
+# （README 过去写"Python 3.6+"，与这里的 pin 自相矛盾，已更正）。
+#
+# 只跑计算核心或跑测试不需要这个文件：
+#   - core.py 仅依赖标准库，任何 Python 3.6+ 都能直接跑；
+#   - 测试依赖见 requirements-dev.txt（pytest，无 GUI 依赖）。
 matplotlib==3.5.3
 openpyxl==3.1.3
 pandas==1.3.5

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-main.py — WetBulb Calculator 湿球计算器 · v1.3.0（程序入口）
+main.py — WetBulb Calculator 湿球计算器 · v1.3.1（程序入口）
 =================================================================
 本文件 = 原 WetBulb_Calculator.py 中【除计算引擎外的全部功能】：
   - GUI 主窗口、事件绑定、输入校验、单位换算
@@ -16,16 +16,13 @@ import math
 import time
 import webbrowser
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 import pandas as pd
-import openpyxl  # 添加Excel支持
-import json  # 添加json支持
+# 注：读写 xlsx 依赖 openpyxl，由 requirements.txt 提供，pandas 会自行载入，无需在此 import。
 
 from PySide2.QtCore import QStringListModel, Qt
 from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog
 from PySide2.QtGui import QIcon, QColor
-from qfluentwidgets import TeachingTip,TeachingTipTailPosition,InfoBarIcon,ToolTip,ToolTipFilter,ToolTipPosition,\
-    InfoBar,InfoBarPosition,setThemeColor
+from qfluentwidgets import ToolTipFilter, ToolTipPosition, InfoBar, InfoBarPosition, setThemeColor
 
 from calculator1 import Ui_wetbulb, load_title_color
 from unit import Ui_Dia
@@ -52,8 +49,9 @@ plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 # ======================================================================
 # 计算核心与配置统一由 core.py 提供（版本号、精度、重力加速度、公式引擎）
 # ======================================================================
-from core import (tag, tot, g, resource_path, save_g_value,
-                  calculate_esat, calculate_wetbulb, calculate_dewpoint, calculate_both)
+from core import (tot, resource_path, save_g_value,
+                  calculate_wetbulb, calculate_dewpoint, calculate_both,
+                  derive_moist_air)
 
 # 【配置已移至 core.py，此处不再重复定义（旧代码注释保留）】
 # def load_g_value():
@@ -421,12 +419,12 @@ class main_window(QWidget, Ui_wetbulb):
                 self.createErrorInfoBar("重力加速度必须大于0！")
                 self.LineEdit_4.clear()
                 return
-            global g
-            g = g_input
-            save_g_value(g)
-            self.LineEdit_4.setPlaceholderText(f"{g:.2f} m/s²")  # 直接更新placeholderText
+            # 只落盘 + 更新界面：g 不参与任何公式计算（见 core.py 中的说明），
+            # 旧版改的模块级 g 是个不会被读取的全局量。
+            save_g_value(g_input)
+            self.LineEdit_4.setPlaceholderText(f"{g_input:.2f} m/s²")  # 直接更新placeholderText
             self.LineEdit_4.clear()  # 清空输入框
-            self.createSuccessInfoBar(f"重力加速度已更新为 {g} m/s²")
+            self.createSuccessInfoBar(f"重力加速度已更新为 {g_input} m/s²")
         except ValueError:
             self.createErrorInfoBar("重力加速度必须是有效数字！")
             self.LineEdit_4.clear()
@@ -496,8 +494,9 @@ class main_window(QWidget, Ui_wetbulb):
             T_other_input = float(self.LineEdit.text())
 
             if mode == 2:  # 已知相对湿度
-                if T_other_input < 0 or T_other_input > 100:
-                    self.createErrorInfoBar("相对湿度必须在0-100%之间！")
+                # 与 core.check_relative_humidity 一致：RH=0 时 e=0，露点无定义，故下界为开区间
+                if T_other_input <= 0 or T_other_input > 100:
+                    self.createErrorInfoBar("相对湿度必须在 (0, 100] % 之间！")
                     self.LineEdit.clear()
                     return
                 rh = T_other_input  # 这里是百分比
@@ -564,7 +563,6 @@ class main_window(QWidget, Ui_wetbulb):
         try:
             T_g_input = float(self.LineEdit_3.text())
             T_g = self.changetemp(T_g_input)
-            T_g_K = T_g + 273.15
 
             if mode == 0:  # 已知露点求湿球
                 Td = self.changetemp(float(self.LineEdit.text()))
@@ -583,85 +581,44 @@ class main_window(QWidget, Ui_wetbulb):
             P_input = float(self.LineEdit_2.text())
             P_hPa = self.changepre(P_input)
 
-            R = 8.314462618
-            Mv = 18.01528
-            Md = 28.9647
-            Rv = 1000*R/Mv  # 水汽气体常数
-            Rd = 1000*R/Md  # 干空气
-            Cp = 1004.7463+0.05*T_g  # 定压比热容（精确值）
-            Cpw = 1864 # 水的定压比热容
-            Cv = Cp - R
-            Cvw = Cpw - R
-            ups = Mv/Md
-            upsilon = (1-ups)/ups
+            # 派生量统一交给 core.derive_moist_air（纯函数、无 GUI 依赖、可被 tests/ 覆盖）。
+            # 旧版在 GUI 回调里手写这 60 行，其中比热容误用摩尔气体常数、
+            # 水汽密度误用 esw、饱和混合率误用 e —— 详见 core.py 中的注释。
+            d = derive_moist_air(T_g, Tw, Td, rh, P_hPa, method_name)
 
-            es = calculate_esat(T_g, method_name)
-            esw = calculate_esat(Tw, method_name)
-            e = calculate_esat(Td, method_name)
-            P_dry = P_hPa - e
-            x = e/P_hPa
-            gamma1 = (1-x)*Cp + x*Cpw
-            gamma2 = (1-x)*Cv + x*Cvw
-            gamma_mix = gamma1/gamma2
-            M_mix = ((1-x)*Md + x*Mv)/1000
-            v_sound = ((gamma_mix*R*T_g_K)/M_mix)**0.5 # 声速
+            es1 = self.prechange(d['es'])
+            esw1 = self.prechange(d['esw'])
+            e1 = self.prechange(d['e'])
+            P_dry1 = self.prechange(d['P_dry'])
 
-            ro_dry = P_dry*100/(Rd*T_g_K)
-            ro_vapor = esw*100/(Rv*T_g_K)
-            ro = ro_dry + ro_vapor
-            dm = ro_vapor/ro_dry  # 含湿量就是混合率
-            dm1 = dm*1000
-            L_v = 2500.8-2.3665*T_g-0.0023*T_g**2+1.87e-5*T_g**3-4.2e-8*T_g**4  # 蒸发潜热
-            han = Cp/1000*T_g+(L_v+Cpw/1000*T_g)*dm
+            virtual_temp1 = self.tempchange(d['virtual_temp_K'] - 273.15)  # 虚温
+            theta = self.tempchange(d['theta_K'] - 273.15)                 # 位温THTA
+            theta_E = self.tempchange(d['theta_e_K'] - 273.15)             # 相当位温THTE
+            theta_V = self.tempchange(d['theta_v_K'] - 273.15)             # 虚位温THTV
 
-            es1 = self.prechange(es)
-            esw1 = self.prechange(esw)
-            e1 = self.prechange(e)
-            P_dry1 = self.prechange(P_dry)
-
-            sat_mixing_ratio = ups*(e/(P_hPa-e))*1000 if P_hPa > e else 0  # 饱和混合率 (g/kg)
-            absolute_humidity = (e*100)/(Rv*T_g_K)*1e3  # 绝对湿度 (g/m³)
-            specific_humidity = (ups*e)/(P_hPa-(1-ups)*e)*1000 if P_hPa > (1-ups)*e else 0  # 比湿 (g/kg)**E*
-
-            q = specific_humidity/1000  # 比湿转kg/kg
-            virtual_temp = T_g_K*(1+upsilon*q)  # 精确系数0.6078
-            virtual_temp1 = self.tempchange(virtual_temp-273.15)  # 虚温
-
-            theta_K = T_g_K*(1000/P_hPa)**(Rd/Cp)
-            theta = self.tempchange(theta_K-273.15)  # 位温THTA
-            theta_e = theta_K*math.exp(L_v*q/(Cp*T_g_K))  # 相当位温THTE
-            theta_v = theta_K*(1+upsilon*q)  # 虚位温THTV
-            theta_E = self.tempchange(theta_e-273.15)
-            theta_V = self.tempchange(theta_v-273.15)
-
-            # 计算LCL，避免可能的数学错误
-            try:
-                numerator = 1/(Td-56)
-                denominator = math.log(rh)/800
-                t_lcl0 = 1/(numerator-denominator)+56  # Bolton公式
-                t_lcl = self.tempchange(t_lcl0)
-                exponent = Cp/Rd
-                p_lcl0 = P_hPa*((t_lcl0+273.15)/T_g_K)**exponent
-                p_lcl = self.prechange(p_lcl0)
-            except (ValueError, ZeroDivisionError):
+            # 抬升凝结高度（Bolton 公式）；rh<=0 或不可解时 core 返回 nan
+            if math.isnan(d['t_lcl_C']):
                 t_lcl = float('nan')
                 p_lcl = float('nan')
+            else:
+                t_lcl = self.tempchange(d['t_lcl_C'])
+                p_lcl = self.prechange(d['p_lcl_hPa'])
 
             base_info = [
                 f"{method_name} | 常用气象参数",
                 f"相对湿度: {rh*100:.2f}%",
-                f"绝对湿度: {absolute_humidity:.3f} g/m³",
-                f"比湿: {specific_humidity:.3f} g/kg",
+                f"绝对湿度: {d['absolute_humidity']:.3f} g/m³",
+                f"比湿: {d['specific_humidity']:.3f} g/kg",
                 f"蒸气压: {e1:.2f} {self.pressure_unit}",
                 f"饱和蒸气压: {es1:.2f} {self.pressure_unit}",
                 f"干空气分压: {P_dry1:.1f} {self.pressure_unit}",
-                f"干空气密度: {ro_dry:.3f} kg/m³",
-                f"水蒸气密度: {ro_vapor:.3f} kg/m³",
-                f"空气密度: {ro:.3f} kg/m³",
-                f"焓值: {han:.2f} kJ/kg",
-                f"蒸发潜热: {L_v:.1f} kJ/kg",
-                f"含湿量: {dm1:.3f} g/kg",
-                f"饱和混合率: {sat_mixing_ratio:.3f} g/kg",
+                f"干空气密度: {d['ro_dry']:.3f} kg/m³",
+                f"水蒸气密度: {d['ro_vapor']:.3f} kg/m³",
+                f"空气密度: {d['ro']:.3f} kg/m³",
+                f"焓值: {d['han']:.2f} kJ/kg",
+                f"蒸发潜热: {d['L_v']:.1f} kJ/kg",
+                f"含湿量: {d['dm1']:.3f} g/kg",
+                f"饱和混合率: {d['sat_mixing_ratio']:.3f} g/kg",
                 f"位温: {theta:.2f} {self.temperature_unit}",
                 f"相当位温: {theta_E:.2f} {self.temperature_unit}",
                 f"虚温: {virtual_temp1:.2f} {self.temperature_unit}",
@@ -676,9 +633,9 @@ class main_window(QWidget, Ui_wetbulb):
                 ]
 
             additional_info = [
-                f"水蒸气摩尔分数: {x*100:.1f} %",
-                f"湿空气绝热指数: {gamma_mix:.2f}",
-                f"空气中声速: {v_sound:.1f} m/s²",
+                f"水蒸气摩尔分数: {d['x']*100:.1f} %",
+                f"湿空气绝热指数: {d['gamma_mix']:.2f}",
+                f"空气中声速: {d['v_sound']:.1f} m/s",
                 f"湿球蒸气压: {esw1:.2f} {self.pressure_unit}",
             ]
 
@@ -693,12 +650,12 @@ class main_window(QWidget, Ui_wetbulb):
             hint = [
                 "欢迎使用批量计算功能！",
                 "关于具体如何使用，详见README.md。 当前",
-                f"- A列为干球温度",
+                "- A列为干球温度",
                 f"- B列为{self.label_2.text().strip('：')}",
-                f"- C列为大气压强",
+                "- C列为大气压强",
                 "- 单位与设置相同",
-                f"- 正在使用Goff公式进行计算",
-                f"- 附加计算内容："
+                "- 正在使用Goff公式进行计算",
+                "- 附加计算内容："
             ]
             self.list_model_2.setStringList(hint)
 

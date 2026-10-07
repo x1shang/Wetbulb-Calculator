@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'C:/Users/zhu_j/Desktop/文件夹/python/晴雨表/关于.ui'
+# Form implementation generated from reading ui file '关于.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.10
 #
@@ -94,7 +94,8 @@ class Ui_Dialog(object):
         Dialog.setWindowTitle(_translate("Dialog", "关于软件"))
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.0)"))  # v1.2.2 旧版本号注释保留
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.2)"))  # v1.3.0 旧版本号注释保留
-        self.label.setText(_translate("Dialog", "湿球计算器（version1.3.0)"))
+        # self.label.setText(_translate("Dialog", "湿球计算器（version1.3.0)"))  # v1.3.1 旧版本号注释保留
+        self.label.setText(_translate("Dialog", "湿球计算器（version1.3.1)"))
         self.label_2.setText(_translate("Dialog", "RDFZ降水相态研究性学习小组"))
         self.label_9.setText(_translate("Dialog", "朱嘉赫 王一博 刘思毅 制作"))
         self.label_3.setText(_translate("Dialog", "参考文献："))

@@ -1,0 +1,52 @@
+name: tests
+# 审计结论："10/10 仓库零 CI —— 你的验证全靠人记得跑"。
+# 这个工作流把"我说通过"换成"机器说通过"：每次 push / PR 都在一台干净机器上重跑。
+# 判定成败的唯一依据是退出码（0 = 成功），不读任何打印信息。
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:        # 也允许在 Actions 页面手动点一次
+
+# 最小权限：CI 只需要读代码
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 = 运行/打包环境；3.12 = 证明计算核心不依赖老版本解释器
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # 只装测试依赖：GUI 依赖（PySide2==5.15.2.1）在 3.11+ 上装不上，
+      # 装它会让整条流水线因为无关原因变红。
+      - name: 安装测试依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: 计算核心等价性回归（零依赖入口）
+        run: python core.py
+
+      - name: 计算核心正确性验证（对照公开参考值）
+        run: python -m pytest -q
+
+      # tests/ 覆盖不到 GUI：main.py 依赖 PySide2，CI 里装不上也跑不起来。
+      # 至少做语法编译，避免把写错的文件推上去。
+      - name: 语法检查（含 GUI 入口）
+        run: python -m py_compile main.py core.py calculator1.py unit.py about.py sample.py
+
+      # 静态检查只覆盖承载真实逻辑的两个文件；calculator1/unit/about 是 pyuic 生成的，
+      # sample.py 是保留的历史参考实现，它们的既有告警不代表回归。
+      - name: 静态检查（未定义名/未使用导入）
+        run: python -m pyflakes core.py main.py

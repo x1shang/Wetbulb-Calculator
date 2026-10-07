@@ -1,0 +1,15 @@
+# 行尾策略
+#
+# 为什么需要这个文件：CI 跑在 Linux 上，而开发机是 Windows。没有它，
+# 行尾取决于每个人本机的 core.autocrlf 设置，是"在我机器上能跑"的经典来源之一。
+# 这里统一为：仓库内以 LF 存储，检出到 Windows 时得到 CRLF。
+* text=auto
+
+# 明确二进制，避免被当成文本做行尾转换而损坏
+*.exe   binary
+*.ico   binary
+*.xlsx  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.pdf   binary

@@ -1,3 +1,4 @@
+# 本地/构建产物：绝不入库（见 README「产物与授权政策」）
 /.idea/*
 /.git/*
 /dist/*
@@ -6,8 +7,13 @@
 *.xlsx
 /env/
 # 上面：Miniforge conda 环境（python3.10 + 依赖，体积大不入库）
-/__pycache__/*
+
+# __pycache__ 会出现在任意层级（根目录、tests/、将来任何子包），
+# 所以不能写成 /__pycache__/*（那样只会锚定到仓库根——正是"漏网之鱼"的经典成因）。
+__pycache__/
+*.pyc
+
+# 重构前的单文件版本（v1.3.0 起拆成 main.py + core.py）：留一条规则防止误加回来
 WetBulb_Calculator.py
-sample.py
 wetbulb注册表更改.md
 更新内容.md

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'C:/Users/zhu_j/Desktop/文件夹/python/晴雨表/单位.ui'
+# Form implementation generated from reading ui file '单位.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.10
 #

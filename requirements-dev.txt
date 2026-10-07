@@ -1,0 +1,10 @@
+# 开发/测试依赖 —— 刻意与 requirements.txt 分开。
+#
+# 为什么要分开：运行依赖钉着 PySide2==5.15.2.1，它在 Python 3.11+ 上没有轮子；
+# 而计算核心 core.py 零第三方依赖，测试也只需要 pytest。
+# 混在一起会让 CI 在空白机器上因为 GUI 依赖装不上而整条流水线变红。
+#
+#   pip install -r requirements-dev.txt
+#   python -m pytest -q
+pytest>=8.0
+pyflakes>=3.0
