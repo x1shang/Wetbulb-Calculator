@@ -311,6 +311,26 @@ the tolerance table in `tests/test_esat_reference.py` so CI keeps an eye on its 
    `tests/test_repo_hygiene.py` constructs the real windows on an offscreen Qt platform when a
    suitable interpreter is available; interactions (unit dialog, batch writing) still need a
    human.
+9. **The psychrometric coefficient A is not the WMO one.** This project uses
+   `0.000667(1+0.00115·t_w)`, which comes from FAO *Frost Protection* Annex 3 (citing
+   Fritschen & Gay, 1979) — **not** from WMO-No. 8, which specifies the Assmann form
+   `A = 6.53e-4(1+0.000944·t_w)` over water and `5.75e-4` over ice. Measured effect of
+   switching: deviation from the ASHRAE definition drops from **0.452 K to 0.265 K**.
+   Not changed yet, because WMO gives *two different* coefficients for water and ice and this
+   tool does not currently distinguish the phase — a phase-judgement call.
+10. **`Gili` carries an unexplained term.** Its exponent includes a `+0.00141966` that appears in
+    no source I could find (the Chinese engineering-literature version of the same formula has
+    `2.0057173 = lg 101.325` instead, with P in kPa — which does confirm the v1.3.1 prefactor
+    fix). Removing it would cut the deviation from the reference table from **0.276 % to
+    0.147 %**. Not changed yet.
+
+> Full citations for all 14 formulas, per-entry verification status, and the quantified
+> comparison for items 9–10 are in [`docs/精度与参考文献.md`](docs/精度与参考文献.md) (Chinese).
+>
+> ⚠️ Verification corrected three attributions: this project's two `Wexler` coefficient sets
+> are exactly **Hyland & Wexler (1983)**, not Wexler (1976); `Goff` is **1957**, not the
+> frequently miscited 1965; `Marti` is **Marti & Mauersberger (1993)**; and the `Magnus`
+> water/ice forms are verbatim **WMO-No. 8 Annex 4.B equations (4.B.1)/(4.B.3)**.
 
 ---
 

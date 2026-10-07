@@ -424,7 +424,8 @@ def test_gui_windows_construct_offscreen():
         print("about_refs_width=", about.references.width())
         print("about_has_grades=", all(
             k in about.references.toPlainText()
-            for k in ("WMO", "ASHRAE", "Stull", "Goff", "Wexler", "Buck", "周西华")))
+            for k in ("WMO-No. 8", "ASHRAE", "Stull", "Goff", "Hyland", "Buck",
+                      "Marti", "Murphy", "Fritschen", "周西华")))
         print("unit_g_placeholder=", w.LineEdit_4.placeholderText())
     ''')
     proc = _run_with_gui(exe, code)

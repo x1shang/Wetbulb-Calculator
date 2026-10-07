@@ -34,8 +34,12 @@ _REFERENCES_HTML = """
 
 <h4>用来判断"算得准不准"的外部参照</h4>
 <ul>
-  <li>WMO / Smithsonian 气象表 —— 水面与冰面饱和水汽压参照值</li>
-  <li>ASHRAE Handbook—Fundamentals（<i>Psychrometrics</i> 章）——
+  <li>WMO / Smithsonian 气象表 —— 水面与冰面饱和水汽压参照值
+      （WMO 1966 <i>International Meteorological Tables</i>, WMO-No. 188, 1973 修订）</li>
+  <li>Murphy, D. M., &amp; Koop, T. (2005). <i>Review of the vapour pressures of ice and
+      supercooled water for atmospheric applications.</i> Q. J. R. Meteorol. Soc.,
+      <b>131</b>(608), 1539–1565.</li>
+  <li>ASHRAE Handbook—Fundamentals, <i>Chapter 1: Psychrometrics</i> ——
       热力学（绝热饱和）湿球温度定义式</li>
   <li>Stull, R. (2011). <i>Wet-Bulb Temperature from Relative Humidity and Air
       Temperature.</i> J. Appl. Meteor. Climatol., <b>50</b>(11), 2267–2269.</li>
@@ -43,18 +47,26 @@ _REFERENCES_HTML = """
 
 <h4>14 条饱和水汽压公式的主要出处</h4>
 <ul>
+  <li><b>WMO-No. 8 (2018), Annex 4.B, 式 (4.B.1) / (4.B.3)</b> ——
+      水面 <i>e</i>=6.112·exp(17.62t/(243.12+t))、冰面 <i>e</i>=6.112·exp(22.46t/(272.62+t))，
+      与本站 Magnus 水面 / 冰面逐字一致</li>
   <li>Goff, J. A., &amp; Gratch, S. (1946). <i>Low-pressure properties of water from
       −160 to 212 °F.</i> Trans. ASHVE, <b>52</b>, 95–122.　（Goff-Gratch 水面 / 冰面）</li>
-  <li>Wexler, A. (1976). <i>Vapor pressure formulation for water in range 0 to 100 °C.</i>
-      J. Res. NBS A, <b>80A</b>(5/6), 775–785.</li>
+  <li>Goff, J. A. (1957). <i>Saturation pressure of water on the new Kelvin temperature
+      scale.</i> Trans. ASHVE, <b>63</b>, 347–354.　（Goff 水面）
+      注意年份是 <b>1957</b>，不是常被误写的 1965</li>
   <li>Hyland, R. W., &amp; Wexler, A. (1983). <i>Formulations for the thermodynamic
       properties of the saturated phases of H₂O from 173.15 K to 473.15 K.</i>
-      ASHRAE Trans., <b>89</b>(2A), 500–519.　（Wexler 冰面）</li>
+      ASHRAE Trans., <b>89</b>(2A), 500–519.　（Wexler 水面 / 冰面）
+      —— <b>本站两组 Wexler 系数逐项等于本文</b>，不是 Wexler (1976)</li>
   <li>Buck, A. L. (1981). <i>New equations for computing vapor pressure and enhancement
-      factor.</i> J. Appl. Meteor., <b>20</b>, 1527–1532.　（Buck 水面 / 冰面）</li>
+      factor.</i> J. Appl. Meteor., <b>20</b>(12), 1527–1532.　（Buck 水面 / 冰面）</li>
+  <li>Marti, J., &amp; Mauersberger, K. (1993). <i>A survey and new measurements of ice
+      vapor pressure at temperatures between 170 and 250 K.</i> Geophys. Res. Lett.,
+      <b>20</b>(5), 363–366.　（Marti 冰面）</li>
   <li>Alduchov, O. A., &amp; Eskridge, R. E. (1996). <i>Improved Magnus form approximation
-      of saturation vapor pressure.</i> J. Appl. Meteor., <b>35</b>, 601–609.
-      　（Magnus / August 系的现代系数）</li>
+      of saturation vapor pressure.</i> J. Appl. Meteor., <b>35</b>(4), 601–609.
+      　（Magnus / August 系的现代系数；系数归属尚存疑）</li>
   <li>Tetens, O. (1930). <i>Über einige meteorologische Begriffe.</i>
       Z. Geophys., <b>6</b>, 297–309.</li>
   <li>Bolton, D. (1980). <i>The computation of equivalent potential temperature.</i>
@@ -62,11 +74,29 @@ _REFERENCES_HTML = """
   <li>周西华, 梁茵 等 (2007). 饱和水蒸气分压力经验公式的比较. <b>26</b>(3), 331–333.</li>
 </ul>
 
+<h4>湿球方程的两个系数</h4>
+<p>本站解 <i>e</i> = <i>e<sub>w</sub></i> − A·p·(t − t<sub>w</sub>)
+（方程本身见 WMO-No. 8, 4.3.1.1 式 (4.1)），A 取
+<b>0.000667(1+0.00115·t<sub>w</sub>)</b>——这个形式出自
+<b>FAO《Frost Protection》附录 3 式 (A3.10)</b>（转引 Fritschen &amp; Gay, 1979），
+<b>不是 WMO-No. 8 的系数</b>。WMO 给的是 Assmann 式
+A = 6.53×10⁻⁴(1+0.000944·t<sub>w</sub>)（水面，Annex 4.B.8）与 5.75×10⁻⁴（冰面，4.B.9）。
+理论值 A ≈ c<sub>p</sub>/(εL) ≈ 6.46×10⁻⁴（Simões-Moreira, 1999, Meas. Sci. Technol. 10(4)）。
+换成 WMO 系数后与 ASHRAE 定义式的偏差可由 0.452 K 降到 0.265 K，但**尚未修改**——
+水面/冰面用哪个 A 属于相态判断，见 docs/ 下的说明。</p>
+
 <h4>未能核实到原文的</h4>
-<p><b>Gili-水面</b>（中文气象学文献）与 <b>Marti-冰面</b>。
-Gili 式的前因子已按"参考点 373.16 K 处应为 1013.25 hPa"修正
-（原值 980.66 是 1 工程大气压的 hPa 数），改后与参考表的偏差由 −3.0% 降到 ≤0.28%——
-这是自洽性论证，不是原文依据。若能取得原文请核对。</p>
+<p><b>Gili-水面</b>：气象学文献中查无"吉利公式"这一名称。目前只在中文暖通/冷却塔工程文献里
+找到同族公式，其形式为 lg <i>P</i> = 2.0057173 − 3.142305(10³/T − 10³/373.15) +
+8.2·lg(373.15/T) − 0.0024804(100 − t)，<b>P 单位 kPa</b>；而
+2.0057173 = lg 101.325，即参考值 101.325 kPa = <b>1013.25 hPa</b>。
+这证实了 v1.3.1 把前因子由 980.66（1 工程大气压）改为 1013.25 是对的。
+但本站指数里另有一个 <b>+0.00141966</b> 项查不到出处（中文版本没有），
+去掉它偏差可由 0.276% 降到 0.147%——尚未修改。</p>
+<p>另有若干条目只找到汇编转引、未取得原文（Hyland &amp; Wexler 的页码、Buck 1996 手册、
+Tetens 1930、Smithsonian 表页），逐条列在
+<a href="https://github.com/x1shang/Wetbulb-Calculator/tree/master/docs">docs/</a>
+下的《精度与参考文献.md》。</p>
 
 <h4>完整清单</h4>
 <p>每条公式的实测偏差、容差怎么定的、以及所有存疑说明，见仓库
