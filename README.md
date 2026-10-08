@@ -10,6 +10,34 @@
 
 ---
 
+## ⚡ 30 秒试一下
+
+不用装 Python、不用开界面。到 [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases) 下载
+**`WetBulbCLI-*.exe`**（约 6.5 MB，**零第三方依赖**），然后一条命令：
+
+```powershell
+.\WetBulbCLI-v1.3.3.exe --mode rh --temperature 25 --value 60
+```
+
+输出是 JSON（25 ℃ / 相对湿度 60 %，**逐公式**给出露点与湿球）：
+
+```json
+{"version": "v1.3.3", "mode": "rh", "results": [
+  {"method": "Goff-水面",   "result1": 16.7003, "result2": 19.5488},
+  {"method": "Wexler-水面", "result1": 16.7011, "result2": 19.5490},
+  {"method": "Buck-水面",   "result1": 16.6993, "result2": 19.5497},
+  {"method": "Gili-水面",   "result1": "不适用", "result2": null}
+]}
+```
+
+`--mode` 换成 `dewpoint` / `wetbulb` 就是另外两种模式；`--help` 看全部参数；错误输入会写入 stderr 并返回退出码 2。
+
+**想先确认它算得准不准？** → [`docs/精度与参考文献.md`](docs/精度与参考文献.md)：14 条公式在各自注册区间上的实测偏差表、五方独立参照（IAPWS-95 / Murphy & Koop 2005 / WMO 表 / ASHRAE / Stull 2011）、以及**明写的已知局限**。
+
+**算得不对、或想加一条公式？** → [开一个 Issue](https://github.com/x1shang/Wetbulb-Calculator/issues/new/choose)，模板会问我要的四件事（场景 / 期望值与依据 / 实际结果 / 版本）。能复现的算例我会直接加进 `tests/` 当回归用例。
+
+---
+
 ## 项目简介
 湿球计算器是一款基于气象学公式的图形化工具，用于计算湿球温度、露点温度及相关气象参数。支持多种饱和水蒸气压力计算公式，提供单位转换、迭代过程可视化及详细参数分析功能。
 本项目作为我们降水相态的温度廓线研究的子项目，为主项目提供了强大的技术支持。提供本软件即旨在提供各类气象学研究的得力工具。
