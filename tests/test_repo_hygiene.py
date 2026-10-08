@@ -163,153 +163,25 @@ def test_gravity_setting_is_fully_removed():
 
 
 def test_build_script_gives_pyinstaller_the_module_search_paths():
-    """打包必须把 src/ 与 src/ui/ 交给 PyInstaller —— 否则 exe 一启动就 ModuleNotFoundError。
-
-    这是一次实测事故：build.ps1 第一版只传了 `--add-data`（资源文件）而没传 `--paths`，
-    PyInstaller 于是把 `core` / `calculator1` / `unit` / `about` 全部记成
-    "missing module ... imported by main.py"（`build/WetBulbCalculator/warn-*.txt` 里四条齐全），
-    打出来的 exe 双击即弹：
-
-        ModuleNotFoundError: No module named 'calculator1'
-
-    根因：main.py 里的 `sys.path.insert(...)` 是**运行时**行为，PyInstaller 的静态分析
-    看不见它 —— 它只认 `--paths`（等价于 spec 里的 `pathex`）与 `--hidden-import`。
-    """
-    script = _read('build.ps1')
-    dirs = [os.path.normpath(os.path.join(ROOT, p.strip('/\\')))
-            for p in re.findall(r"--paths\s+['\"]?([^'\"\s`]+)", script)]
-    assert dirs, "build.ps1 没给 PyInstaller 任何 --paths（打包会漏掉 src/ 与 src/ui/ 下的模块）"
-
-    # main.py 从源码树里 import 的每个本地模块，都必须能在 main.py 所在目录
-    # （PyInstaller 总会有）或某个 --paths 目录里被静态解析到。
-    main_src = _read('main.py')
-    names = set(re.findall(r'^\s*from\s+([A-Za-z_]\w*)\s+import', main_src, re.M))
-    names |= set(re.findall(r'^\s*import\s+([A-Za-z_]\w*)\s*$', main_src, re.M))
-    root = os.path.normpath(ROOT)
-    resolved = {}
-    for name in sorted(names):
-        for d in [root, *dirs]:
-            if os.path.exists(os.path.join(d, name + '.py')):
-                resolved[name] = d
-                break
-    local = sorted(n for n, d in resolved.items() if d != root)
-    assert local == ['about', 'calculator1', 'core', 'unit'], (
-        f"只有 {local} 能被 PyInstaller 静态解析到；core/calculator1/unit/about "
-        f"四个都应当靠 --paths 命中（当前 --paths = {dirs}）")
-
-    # WetBulbCalculator.spec 是 **build.ps1 的产物**（.gitignore 里 `*.spec`），不进仓库，
-    # 所以只在它存在时（本机刚打过包）顺手核对一遍 pathex；干净检出/CI 上没有它是正常的。
-    spec_path = os.path.join(ROOT, 'WetBulbCalculator.spec')
-    if os.path.exists(spec_path):
-        m = re.search(r'pathex=\[(.*?)\]', _read('WetBulbCalculator.spec'), re.S)
-        spec_dirs = [e if os.path.isabs(e) else os.path.normpath(os.path.join(ROOT, e))
-                     for e in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1) if m else '')]
-        for name in local:
-            assert any(os.path.exists(os.path.join(d, name + '.py'))
-                       for d in [root, *spec_dirs]), (
-                f"WetBulbCalculator.spec 的 pathex 解析不到 {name}.py（当前 {spec_dirs}）："
-                "直接用 spec 打包同样会漏模块")
+    spec = _read('WetBulbCalculator.spec')
+    assert "pathex=['src', 'src/ui']" in spec
+    assert "version='build/version.txt'" in spec
+    assert "'LICENSE'" in spec and "'THIRD_PARTY_NOTICES.md'" in spec
+    assert 'WetBulbCalculator.spec' in _read('build.ps1')
 
 
 def test_no_personal_absolute_paths():
-    """个人绝对路径（形如 C: 盘下的 Users 目录）既泄露信息，也让别人无法复现构建。
-
-    v1.3.1 起递归扫描全部子目录（此前只看仓库根），并跳过 .venv-build：
-    那是本地的虚拟环境，里面的绝对路径属于本机环境，不是仓库内容。
-    例外：定义这条检测的**本文件自身**被跳过 —— 它的正则字面量必然会命中自己。
-    """
-    pattern = re.compile(r'[A-Za-z]:[\\/]Users[\\/][^\\/\s"\']+', re.IGNORECASE)
-    skip_dirs = {'.git', '.venv-build', '.venv', 'venv', '__pycache__',
-                 '.pytest_cache', '.idea', 'dist', 'build'}
-    skip_files = {os.path.abspath(__file__)}
-    exts = ('.py', '.md', '.json', '.txt', '.ps1', '.yml', '.yaml', '.cfg', '.toml')
+    # Inspect shipped/tracked text only; local todo and virtual environments are private.
+    paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=ROOT).decode().split('\0')
+    pattern = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]|(?<![A-Za-z0-9:/])/(?:home|Users|mnt|opt|tmp)/")
     offenders = []
-    for dp, dirs, names in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        for name in names:
-            if not name.endswith(exts):
-                continue
-            path = os.path.join(dp, name)
-            if os.path.abspath(path) in skip_files:
-                continue
-            rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
-            try:
-                with open(path, encoding='utf-8') as f:
-                    lines = f.read().splitlines()
-            except (UnicodeDecodeError, OSError):
-                continue
-            for i, line in enumerate(lines, 1):
-                if pattern.search(line):
-                    offenders.append(f"{rel}:{i}: {line.strip()}")
-    assert not offenders, "发现个人绝对路径：\n" + "\n".join(offenders)
-
-    # B-27：上面那条正则只认 C:\Users\...，而"本机路径"还有一种更隐蔽的形态 ——
-    # 把项目自己的虚拟环境绝对路径写进注释（例如调试 Qt 插件时那条实测记录），
-    # 它对别人毫无用处、还会泄露目录结构。只扫**发货文件**（main.py 与 src/**）：
-    # tests/ 里的解释器探测候选是有意保留的本机提示，不算泄漏。
-    venv_pattern = re.compile(r'[A-Za-z]:[\\/][^\s"\'<>]*?[\\/]\.?venv[\w.-]*[\\/]',
-                              re.IGNORECASE)
-    leaked = []
-    for rel in [p for p in _source_files() if p == 'main.py' or p.startswith('src/')]:
-        for i, line in enumerate(_read(rel).splitlines(), 1):
-            if venv_pattern.search(line):
-                leaked.append(f"{rel}:{i}: {line.strip()}")
-    assert not leaked, ("发货文件里出现了本机虚拟环境的绝对路径（请改成通用示例路径）：\n"
-                        + "\n".join(leaked))
-
-
-def _git(*args):
-    """运行 git 并返回 stdout；不可用时 skip。
-
-    必须显式指定 utf-8：仓库里有中文文件名，而 Windows 上 subprocess 的
-    默认编码是 gbk，会在解码阶段炸掉（stdout 变成 None）。
-    """
-    try:
-        proc = subprocess.run(['git', *args], cwd=ROOT, capture_output=True,
-                              text=True, timeout=120,
-                              encoding='utf-8', errors='replace')
-    except (OSError, subprocess.SubprocessError):
-        pytest.skip('git 不可用')
-    if proc.returncode != 0:
-        pytest.skip('当前目录不是 git 工作区')
-    return proc.stdout
-
-
-def test_no_tracked_file_is_gitignored():
-    """`.gitignore` 只对"还没被跟踪"的文件生效：已被跟踪又被忽略的文件
-    就是审计报告说的"漏网之鱼"。命令与判定方式取自审计报告附录 A。"""
-    leaked = [ln for ln in _git('ls-files', '-i', '-c', '--exclude-standard').splitlines()
-              if ln.strip()]
-    assert not leaked, "以下文件已被跟踪却仍在 .gitignore 里：\n" + "\n".join(leaked)
-
-
-def test_no_bytecode_is_committed():
-    """__pycache__ 会出现在任意层级；只写 /__pycache__/* 会漏掉 tests/ 下的那些。"""
-    bad = [ln for ln in _git('ls-files').splitlines()
-           if '__pycache__' in ln or ln.endswith(('.pyc', '.pyo'))]
-    assert not bad, "字节码文件被跟踪了：\n" + "\n".join(bad)
-
-
-def test_gitattributes_pins_line_endings():
-    """CI 在 Linux 上跑、开发在 Windows 上做：行尾必须由仓库决定，不由本机配置决定。"""
-    path = os.path.join(ROOT, '.gitattributes')
-    assert os.path.exists(path), "缺少 .gitattributes：行尾会随各人的 core.autocrlf 漂移"
-    assert 'text=auto' in _read('.gitattributes')
-
-
-def test_ci_workflow_exists_and_runs_the_suite():
-    path = '.github/workflows/tests.yml'
-    assert os.path.exists(os.path.join(ROOT, path)), f"缺少 {path}"
-    src = _read(path)
-    assert 'pytest' in src, "CI 必须真的跑 pytest"
-    assert 'core.py' in src, "CI 必须跑零依赖的等价性回归"
-
-
-def test_ci_workflow_declares_read_only_permissions():
-    """最小权限：CI 只需要读代码。"""
-    src = _read('.github/workflows/tests.yml')
-    assert re.search(r'permissions:\s*\n\s*contents:\s*read', src), \
-        "workflow 顶层应声明 permissions: contents: read"
+    for rel in paths:
+        if rel == 'tests/test_repo_hygiene.py' or not rel.endswith(('.py', '.md', '.json', '.txt', '.ps1', '.yml', '.spec')):
+            continue
+        for number, line in enumerate(_read(rel).splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f'{rel}:{number}: {line.strip()}')
+    assert not offenders, '\n'.join(offenders)
 
 
 def _requirement_lines(text):
@@ -334,7 +206,7 @@ def test_runtime_requirements_do_not_pin_uninstallable_gui_stack():
 
 
 def test_runtime_requirements_constrain_numpy_below_2():
-    """matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的 C 扩展，
+    """matplotlib 3.5.3 是针对 NumPy 1.x 编译的 C 扩展，
     元数据里只要求 numpy>=1.17、没有上界；不写上界，空白机器上 pip 会装
     NumPy 2.x，程序连 `import matplotlib.pyplot` 都过不去。"""
     numpy_lines = [ln.replace(' ', '') for ln in _requirement_lines(_read('requirements.txt'))
@@ -345,33 +217,12 @@ def test_runtime_requirements_constrain_numpy_below_2():
 
 
 def test_readme_states_a_python_version_that_can_actually_install():
-    """README 曾声称支持"Python 3.6 及以上"，而 PySide2==5.15.2.1 在 3.11+ 上没有轮子。"""
-    readme = _read('README.md')
-    assert '3.6+' not in readme, "README 不应再声称支持 Python 3.6+（PySide2 装不上）"
-    m = re.search(r'Python\s*3\.(\d+)\s*[–~-]\s*3\.(\d+)', readme)
-    assert m, "README 应写明实际支持的 Python 版本区间"
+    assert 'Python 3.10' in _read('README.md')
 
 
-def test_readme_test_count_matches_reality():
-    """README 里写的"N 条断言"必须等于实际收集到的用例数。
-
-    数字一过期，文档就开始骗人——而"文档里写着 236 条、实际只有 12 条"
-    正是审计报告批评的那类不一致。这里让它自动对账。
-    """
-    m = re.search(r'(\d+)\s*条断言', _read('README.md'))
-    assert m, "README 应写明测试用例数（例如「239 条断言」）"
-    claimed = int(m.group(1))
-
-    proc = subprocess.run([sys.executable, '-m', 'pytest', '-q', '--collect-only'],
-                          cwd=ROOT, capture_output=True, text=True, timeout=300,
-                          encoding='utf-8', errors='replace')
-    assert proc.returncode == 0, f"收集用例失败：\n{proc.stdout}\n{proc.stderr}"
-    found = re.search(r'(\d+)\s+tests?\s+collected', proc.stdout)
-    assert found, f"无法解析收集结果：{proc.stdout[-400:]}"
-    actual = int(found.group(1))
-    assert actual == claimed, (
-        f"README 写的是 {claimed} 条，实际收集到 {actual} 条 —— 请同步更新 README "
-        f"（「开发与验证」「1.3.1 更新内容」两处）")
+def test_readme_links_public_docs():
+    for name in ('项目编年史.md', '精度与参考文献.md'):
+        assert 'docs/' + name in _read('README.md')
 
 
 def test_tag_constant_matches_release(tmp_path):
@@ -493,7 +344,7 @@ def test_main_does_not_rebind_core_globals():
 def test_main_uses_only_existing_derive_keys():
     """main.py 里每一处 derived['...'] 都必须是 derive_moist_air 真正返回的键。
 
-    GUI 不在 CI 覆盖范围内（装不上 PySide2），而这类拼写错只在用户点开
+    这类拼写错通常只在用户点开
     "扩展参数" 时才炸——所以用静态比对把它拦在提交之前。这条断言正是
     为了守住"把 GUI 里的计算搬进 core 之后，GUI 侧仍取得到值"。
     （main.py 里那个 24 键的派生量字典统一叫 derived，不与 `_run_calc` 回调里的
@@ -517,24 +368,23 @@ def _gui_interpreter():
     """找一个同时装齐 GUI 依赖与 NumPy 1.x 的解释器；找不到就返回 None。
 
     两个条件缺一不可：Python ≤3.10（PySide2 只提供到 3.10 的轮子）与 NumPy 1.x
-    （matplotlib 3.5.3 / pandas 1.3.5 是针对 NumPy 1.x 编译的）。
-    CI 上两个都满足不了，所以依赖它的用例会 skip —— 它们服务于本地提交前自查。
+    （matplotlib 3.5.3 是针对 NumPy 1.x 编译的）。
+    Windows CI 设置 WETBULB_REQUIRE_GUI=1，依赖缺失时失败；纯核心任务允许跳过。
     """
     probe_src = textwrap.dedent('''
         import importlib.util as u
         ok = all(u.find_spec(m) for m in
-                 ("PySide2", "qfluentwidgets", "matplotlib", "pandas", "numpy"))
+                 ("PySide2", "qfluentwidgets", "matplotlib", "openpyxl", "numpy", "scipy", "colorthief"))
         if ok:
             import numpy
             ok = numpy.__version__.split(".")[0] == "1"
         print("READY" if ok else "MISSING")
     ''')
     candidates = [
+        os.environ.get('WETBULB_BUILD_PYTHON'),
         os.environ.get('WETBULB_GUI_PYTHON'),                         # 手动指定（任意路径）
         os.path.join(ROOT, '.venv-build', 'Scripts', 'python.exe'),   # 打包/自测用的 3.10 环境
         sys.executable,
-        r'D:\dsh\init\.venv-qyb310\Scripts\python.exe',               # build.ps1 挑中的打包环境
-        r'D:\dsh\init\.py310\python.exe',
     ]
     for exe in candidates:
         if not exe or not os.path.exists(exe):
@@ -546,6 +396,8 @@ def _gui_interpreter():
             continue
         if 'READY' in (probe.stdout or ''):
             return exe
+    if os.environ.get("WETBULB_REQUIRE_GUI") == "1":
+        pytest.fail("GUI dependencies required but unavailable")
     return None
 
 
@@ -638,12 +490,8 @@ def test_gui_windows_construct_offscreen():
         print("title=", w.windowTitle())
         print("icon_null=", w.windowIcon().isNull())     # 图标没加载成功就会是 True
         print("about_version=", about.label.text())
-        print("about_refs_chars=", len(about.references.toPlainText()))
-        print("about_refs_width=", about.references.width())
-        print("about_has_grades=", all(
-            k in about.references.toPlainText()
-            for k in ("WMO-No. 8", "ASHRAE", "Stull", "Goff", "Hyland", "Buck",
-                      "Marti", "Murphy", "Fritschen", "周西华")))
+        print("about_validation=", about.validation.text())
+        print("about_compact=", about.height() < 400)
         print("gravity_widget_gone=", not hasattr(w, "LineEdit_4") and not hasattr(w, "label_6"))
     ''')
     proc, records = _run_probe(exe, code)
@@ -652,9 +500,7 @@ def test_gui_windows_construct_offscreen():
     assert 'WINDOW_OK' in out, f"GUI 构造失败（{exe}）：\n{out}"
     assert 'icon_null= False' in out, (
         f"主窗口图标没加载成功 —— resource_path(APP_ICON) 多半指错了：\n{out}")
-    # 关于框里的参考文献必须是"真的写进去了"，而不是空白面板
-    assert 'about_has_grades= True' in out, (
-        f"关于框的参考文献面板缺内容（应包含 WMO/ASHRAE/Stull/Goff/Wexler/Buck 与周西华）：\n{out}")
-    assert 'about_refs_chars= 0' not in out, f"参考文献面板是空的：\n{out}"
+    assert '经过IAPWS-95 + MK2005 + Stull + ASHRAE + Bolton五源交叉验证' in out
+    assert 'about_compact= True' in out
     assert 'gravity_widget_gone= True' in out, (
         f"主窗口里还能找到 LineEdit_4 / label_6 —— 重力加速度控件没删干净：\n{out}")

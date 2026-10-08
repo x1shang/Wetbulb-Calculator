@@ -26,8 +26,14 @@ for _p in (os.path.join(_HERE, 'src'), os.path.join(_HERE, 'src', 'ui')):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# Dispatch before importing any GUI dependencies.
+if __name__ == '__main__' and '--cli' in sys.argv[1:]:
+    from cli import main as cli_main
+    args = sys.argv[1:]
+    args.remove('--cli')
+    raise SystemExit(cli_main(args))
+
 import math
-import time
 import webbrowser
 
 # ---------------------------------------------------------------------------
@@ -76,8 +82,7 @@ except Exception:      # 没有 PySide2 时不影响其它检查（例如 CI 里
     pass
 
 import matplotlib.pyplot as plt
-import pandas as pd
-# 注：读写 xlsx 依赖 openpyxl，由 requirements.txt 提供，pandas 会自行载入，无需在此 import。
+from batch import calculate_file
 
 from PySide2.QtCore import QStringListModel, Qt
 from PySide2.QtWidgets import QApplication, QWidget, QAbstractItemView, QFileDialog, QDialog
@@ -724,140 +729,28 @@ class main_window(QWidget, Ui_wetbulb):
             self.createErrorInfoBar(f"计算错误: {str(e)}")
             
     def process_excel_file(self):
+        current_dir = os.path.dirname(sys.executable) if hasattr(sys, '_MEIPASS') else _HERE
+        files = sorted(fi for fi in os.listdir(current_dir)
+                       if fi.lower().endswith('.xlsx') and not fi.startswith(('result_', '~$')))
+        if len(files) != 1:
+            self.createErrorInfoBar('请在程序目录保留一个输入 xlsx 文件（不含 result_ 输出文件）。')
+            return
+        self.ProgressBar.setVisible(True)
+        self.pushButton_7.setEnabled(False)
         try:
-            hint = [
-                "欢迎使用批量计算功能！",
-                "关于具体如何使用，详见README.md。 当前",
-                "- A列为干球温度",
-                f"- B列为{self.label_2.text().strip('：')}",
-                "- C列为大气压强",
-                "- 单位与设置相同",
-                "- 正在使用Goff公式进行计算",
-                "- 附加计算内容："
-            ]
-            self.list_model_2.setStringList(hint)
-
-            # 获取可执行文件所在目录
-            if hasattr(sys, '_MEIPASS'):
-                # 如果是打包后的exe
-                current_dir = os.path.dirname(sys.executable)
-            else:
-                # 如果是开发环境
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-
-            xlsx_files = [fi for fi in os.listdir(current_dir) if fi.endswith('.xlsx')]
-            
-            if not xlsx_files:
-                self.createErrorInfoBar("当前目录下没有找到.xlsx文件！")
-                return
-                
-            # 读取第一个xlsx文件
-            file_path = os.path.join(current_dir, xlsx_files[0])
-            df = pd.read_excel(file_path)
-
-            if 'A' not in df.columns or 'B' not in df.columns or 'C' not in df.columns:
-                self.createErrorInfoBar("Excel文件必须包含ABC列！")
-                return
-
-            results = []
-            self.ProgressBar.setVisible(True)
-            QApplication.processEvents()  # 确保进度条显示
-
-            mode = self.ComboBox.currentIndex()  # 获取当前计算模式
-
-            for index, row in df.iterrows():
-                try:
-                    # 转换输入单位到标准单位（℃和hPa）
-                    T = self.changetemp(float(row['A']))
-                    P = self.changepre(float(row['C']))
-                    
-                    if mode == 0:  # 已知露点求湿球
-                        Td = self.changetemp(float(row['B']))
-                        initial_guess = self.get_initial_guess(T, Td)
-                        calculator = self._run_calc(calculate_wetbulb, initial_guess, T, Td, P)
-                        # 查找Goff公式的结果
-                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
-                        for result in calculator.methods:
-                            if result['method'] == method and isinstance(result['result1'], float):
-                                results.append(self.tempchange(result['result1']))  # 转换回用户单位
-                                break
-                        else:
-                            results.append(None)
-                            
-                    elif mode == 1:  # 已知湿球求露点
-                        Tw = self.changetemp(float(row['B']))
-                        calculator = self._run_calc(calculate_dewpoint, T, Tw, P)
-                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
-                        for result in calculator.methods:
-                            if result['method'] == method and isinstance(result['result1'], float):
-                                results.append(self.tempchange(result['result1']))  # 转换回用户单位
-                                break
-                        else:
-                            results.append(None)
-                            
-                    elif mode == 2:  # 已知相对湿度同时求露点和湿球
-                        rh_pct = float(row['B'])  # 相对湿度不需要单位转换；core 这边收**百分数**
-                        # 初值：与界面单次计算一致，用干球温度占位（get_initial_guess 的
-                        # 第二个参数是"参考温度"，此前误传了 rh 这个百分数 —— 见 B-29 候选）
-                        initial_guess = self.get_initial_guess(T, T)
-                        calculator = self._run_calc(calculate_both, initial_guess, T,
-                                                    rh_pct=rh_pct, P=P)
-                        method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
-                        for result in calculator.methods:
-                            if result['method'] == method:
-                                if isinstance(result['result1'], float) and isinstance(result['result2'], float):
-                                    # 同时添加露点和湿球温度（转换回用户单位）
-                                    results.append([self.tempchange(result['result1']), 
-                                                  self.tempchange(result['result2'])])
-                                    break
-                        else:
-                            results.append([None, None])
-                        
-                except (ValueError, TypeError):
-                    results.append(None if mode != 2 else [None, None])
-
-                time.sleep(0.01)
-                QApplication.processEvents()  # 确保界面更新
-
-            # 根据模式设置结果列
-            if mode == 0:
-                df['D'] = results
-                df = df.rename(columns={'D': '湿球'})
-            elif mode == 1:
-                df['D'] = results
-                df = df.rename(columns={'D': '露点'})
-            elif mode == 2:
-                df['露点'] = [r[0] if r else None for r in results]
-                df['湿球'] = [r[1] if r else None for r in results]
-            
-            # 添加单位信息到列名
-            temp_unit = self.temperature_unit
-            pressure_unit = self.pressure_unit
-            df = df.rename(columns={
-                'A': f'干球{temp_unit}',
-                'B': f'{self.label_2.text().strip("：")}{temp_unit if mode != 2 else "%"}',
-                'C': f'大气{pressure_unit}'
-            })
-            if mode == 0:
-                df = df.rename(columns={'湿球': f'湿球{temp_unit}'})
-            elif mode == 1:
-                df = df.rename(columns={'露点': f'露点{temp_unit}'})
-            elif mode == 2:
-                df = df.rename(columns={
-                    '露点': f'露点{temp_unit}',
-                    '湿球': f'湿球{temp_unit}'
-                })
-            
-            # 保存结果，使用与输入文件相同的目录
-            output_path = os.path.join(current_dir, f"result_{xlsx_files[0]}")
-            df.to_excel(output_path, index=False)
-            
+            output = calculate_file(
+                os.path.join(current_dir, files[0]),
+                os.path.join(current_dir, 'result_' + files[0]),
+                mode=self.ComboBox.currentIndex(), to_celsius=self.changetemp,
+                to_hpa=self.changepre, from_celsius=self.tempchange,
+                temperature_unit=self.temperature_unit, pressure_unit=self.pressure_unit,
+                progress=lambda done, total: QApplication.processEvents())
+            self.createSuccessInfoBar('已存储至路径' + str(output))
+        except Exception as exc:
+            self.createErrorInfoBar('处理Excel文件时出错：' + str(exc))
+        finally:
             self.ProgressBar.setVisible(False)
-            self.createSuccessInfoBar('已存储至路径'+str(output_path))
-
-        except Exception as e:
-            self.ProgressBar.setVisible(False)
-            self.createErrorInfoBar(f"处理Excel文件时出错：{str(e)}")
+            self.pushButton_7.setEnabled(True)
 
     def show_unit_dialog(self):
         unit_dialog = UnitDialog(self)
@@ -962,4 +855,9 @@ if __name__ == '__main__':
     main_window = main_window()
     main_window.show()
     
+    if '--smoke-test' in sys.argv:
+        from gui_smoke import run
+        output = sys.argv[sys.argv.index('--smoke-test') + 1]
+        run(main_window, app, AboutDialog, UnitDialog, output)
+        sys.exit(0)
     sys.exit(app.exec_())

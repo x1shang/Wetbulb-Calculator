@@ -30,11 +30,11 @@ function Step($name, $block) {
 }
 
 Step '语法检查（含 GUI 入口）' {
-    python -m py_compile main.py src/core.py src/ui/calculator1.py src/ui/unit.py src/ui/about.py legacy/sample.py
+    python -m py_compile main.py src/core.py src/cli.py src/batch.py src/gui_smoke.py src/ui/calculator1.py src/ui/unit.py src/ui/about.py legacy/sample.py
 }
 
 Step '静态检查（未定义名/未使用导入）' {
-    python -m pyflakes main.py src/core.py
+    python -m pyflakes main.py src/core.py src/cli.py src/batch.py src/gui_smoke.py
 }
 
 Step '计算核心等价性回归' {
@@ -53,8 +53,8 @@ Write-Host ""
 if ($hadSkip) {
     Write-Host "注意：本次有测试被 skip。" -ForegroundColor Yellow
     Write-Host "      GUI 三条（import main / offscreen 窗口构造 / 完整计算流程）只有在装了" -ForegroundColor Yellow
-    Write-Host "      PySide2 + NumPy 1.x 的 Python ≤3.10 环境里才真的跑；CI 上必然 skip。" -ForegroundColor Yellow
-    Write-Host "      也就是说：这里的「绿」不包含 GUI 覆盖（README「已知限制」第 8 条）。" -ForegroundColor Yellow
+    Write-Host "      PySide2 + NumPy 1.x 的 Python ≤3.10 环境里才真的跑；Windows CI 强制执行。" -ForegroundColor Yellow
+    Write-Host "      也就是说：这里的「绿」不包含 GUI 覆盖（README「开发与验证」）。" -ForegroundColor Yellow
     Write-Host "      要补上，把 WETBULB_GUI_PYTHON 指向那个解释器再跑一次。" -ForegroundColor Yellow
 }
 if ($failed.Count -gt 0) {

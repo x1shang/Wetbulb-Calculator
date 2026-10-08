@@ -16,6 +16,7 @@
 /dist/
 /build/
 *.spec
+!WetBulbCalculator.spec
 *.pdb
 *.ilk
 
@@ -40,10 +41,9 @@ __pycache__/
 /.audit/
 
 # 只留在本地、不进公开仓库的文档（文件仍在本机；取消跟踪不等于删除）
-#   · 改进操作说明书.md —— 内含审计报告对本项目的批评，属内部材料
-#   · GitHub-Actions-入门.md —— 纯个人学习笔记
 /docs/改进操作说明书.md
 /docs/GitHub-Actions-入门.md
+/docs/todo.md
 
 # 重构前的单文件版本（v1.3.0 起拆成 main.py + src/core.py）：留一条规则防止误加回来
 WetBulb_Calculator.py

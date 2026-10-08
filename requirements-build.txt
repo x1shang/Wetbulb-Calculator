@@ -1,0 +1,5 @@
+-r requirements.txt
+-r requirements-dev.txt
+PyInstaller==6.11.1
+numpy==1.23.5
+pyinstaller-hooks-contrib==2024.10
