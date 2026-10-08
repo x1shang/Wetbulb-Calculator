@@ -19,7 +19,8 @@ RH = core.calculate_esat(TD, 'Goff-水面') / core.calculate_esat(TG, 'Goff-水�
 
 
 def _d(**kw):
-    args = dict(T_g=TG, T_w=TW, Td=TD, rh=RH, P=P, method='Goff-水面')
+    # B-24：derive_moist_air 的相对湿度参数叫 rh_frac 且是**小数**（0.6 = 60%）
+    args = dict(T_g=TG, T_w=TW, Td=TD, rh_frac=RH, P=P, method='Goff-水面')
     args.update(kw)
     return core.derive_moist_air(**args)
 
@@ -134,7 +135,7 @@ def test_at_saturation_everything_collapses():
 
 
 def test_perfectly_dry_is_handled():
-    """rh=0 时 LCL 无定义，必须返回 nan 而不是抛异常或给出假数值。"""
+    """rh_frac=0 时 LCL 无定义，必须返回 nan 而不是抛异常或给出假数值。"""
     d = core.derive_moist_air(TG, TG, -80.0, 0.0, P)
     assert math.isnan(d['t_lcl_C']) and math.isnan(d['p_lcl_hPa'])
     assert d['v_sound'] > 340
@@ -142,7 +143,8 @@ def test_perfectly_dry_is_handled():
 
 @pytest.mark.parametrize('kwargs', [
     dict(T_g=float('nan')), dict(T_w=float('inf')), dict(Td=-200),
-    dict(P=0), dict(P=-1), dict(rh=1.5), dict(rh=-0.1), dict(rh=float('nan')),
+    dict(P=0), dict(P=-1), dict(rh_frac=1.5), dict(rh_frac=-0.1),
+    dict(rh_frac=float('nan')), dict(rh_frac=60.0),   # 60.0 = 有人把百分数传进来了（B-24）
 ])
 def test_validation(kwargs):
     with pytest.raises(core.InputError):

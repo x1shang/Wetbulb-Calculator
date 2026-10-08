@@ -101,8 +101,16 @@ try {
 
     # --------------------------------------------------- 3) 打包
     Write-Step "开始打包 $Name.exe"
+    # --paths 是必须的，不是可选优化：
+    #   main.py 里有一段运行时的 `sys.path.insert(0, 'src')` / `'src/ui'`，但 PyInstaller
+    #   只做**静态**分析，看不见它。不传 --paths 的话 core / calculator1 / unit / about
+    #   会被全部记成 "missing module ... imported by main.py"（build 目录里的 warn-*.txt），
+    #   打出来的 exe 双击就报 `ModuleNotFoundError: No module named 'calculator1'`。
+    #   由 tests/test_repo_hygiene.py::test_build_script_gives_pyinstaller_the_module_search_paths 守着。
     & $py -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name $Name `
+        --paths "src" `
+        --paths "src/ui" `
         --icon assets/app.ico `
         --add-data "assets/app.ico;assets" `
         --add-data "assets/err.ico;assets" `
@@ -113,6 +121,22 @@ try {
     $exe = Join-Path $root "dist\$Name.exe"
     if (-not (Test-Path $exe)) { throw "没有找到产物：$exe" }
 
+    # --------------------------------------------------- 4) 自证 exe 里真有那几个本地模块
+    # "打包成功"不等于"能启动"：PyInstaller 对解析不到的模块**只写一行警告**，照样产出 exe。
+    # 这里直接读它的 warn 文件 —— 少一个本地模块就中止，免得又打出一个双击即崩的产物。
+    Write-Step '核对包内模块（缺模块时 PyInstaller 只警告、不报错）'
+    $warn = Join-Path $root "build\$Name\warn-$Name.txt"
+    if (Test-Path $warn) {
+        $missing = Select-String -Path $warn -Pattern '^missing module named (core|calculator1|unit|about) - imported by'
+        if ($missing) {
+            $missing | ForEach-Object { Write-Host "    $($_.Line)" -ForegroundColor Red }
+            throw 'exe 里缺本地模块（--paths 没生效）：这样打出来的 exe 双击会报 ModuleNotFoundError。'
+        }
+        Write-Host '    OK：core / calculator1 / unit / about 都已被静态解析到' -ForegroundColor Green
+    } else {
+        Write-Host "    警告：找不到 $warn，无法核对包内模块（PyInstaller 版本不同？）" -ForegroundColor Yellow
+    }
+
     Write-Step '打包结果'
     $f = Get-Item $exe
     Write-Host ("    路径   : {0}" -f $f.FullName) -ForegroundColor Green
@@ -122,6 +146,7 @@ try {
     Write-Host ''
     Write-Host '提醒 —— 这两道闸只能人工过（脚本替不了你）：' -ForegroundColor Yellow
     Write-Host '  1) 双击 dist\WetBulbCalculator.exe，三种模式各算一次，再试一次批量计算'
+    Write-Host '     （窗口标题应为「湿球温度计」；若弹出一个显示 Traceback 的对话框，说明模块没打全）'
     Write-Host '  2) 把它复制到一个**含中文的文件夹**里再双击一次（v1.3.1 修过 B-21，应能启动）'
 }
 finally {

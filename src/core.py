@@ -63,10 +63,6 @@ def _read_cfg():
     except Exception:
         return {}
 
-def load_g_value():
-    """读 cfg.json 的重力加速度 g（格式 {"g": 9.81}），失败回退 9.81。"""
-    return _read_cfg().get('g', 9.81)
-
 def load_title_color():
     """读 cfg.json 的标题颜色 title_color（格式 "R, G, B"）；
     未配置或格式非法时返回默认青色 rgb(71, 148, 157)。
@@ -79,23 +75,16 @@ def load_title_color():
         return color.strip()
     return "71, 148, 157"
 
-def save_g_value(g_value):
-    """把 g 写回 cfg.json；保留文件中的其他键（如 title_color）。"""
-    try:
-        cfg = _read_cfg()
-        cfg['g'] = g_value
-        with open(cfg_file_path(for_write=True), 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"保存g值失败: {str(e)}")
-
 tag = "v1.3.1"          # 版本号（与 about.py 中文本保持同步）
                         # v1.3.1 = 数值缺陷修复 + 引擎层输入校验 + 外部参照回归。
                         # 修复了 Gili/Goff2 的系数与 goff 族解析导数，
                         # 因此 v1.3.1 的数值结果与 v1.3.0 **不同**，不能用同一版本号发布。
 tot = 1e-7              # 默认迭代精度
-g = load_g_value()      # 重力加速度
-                        # 注意：g 目前只用于界面占位符与 cfg.json，不参与任何公式计算。
+                        # 【已移除 · 打包重建】此处原有一个 `g = load_g_value()`。
+                        # 那个"本地重力加速度"从未参与任何计算（B-20），且本工具涉及
+                        # 的物理量都不含 g —— 唯一可能用到的 mmHg/cmHg 是**定义值**
+                        # （1 mmHg = 133.322387415 Pa），与重力加速度无关。
+                        # 因此 g、cfg.json 里的 "g" 键与界面输入框一并删除。
 
 # ------------------------------ 物理常数 ------------------------------
 # 比热容/气体常数一律用 J/(kg·K)（比气体常数），不要与摩尔气体常数混用。
@@ -145,9 +134,13 @@ def check_pressure(value):
     return v
 
 
-def check_relative_humidity(value):
-    """相对湿度（%）校验：有限且落在 (0, 100]。"""
-    v = _finite(value, '相对湿度')
+def check_relative_humidity(rh_pct):
+    """相对湿度校验：**百分数**（60 表示 60%），有限且落在 (0, 100]。
+
+    参数名带 _pct 后缀是刻意的 —— 本模块另一处相对湿度（derive_moist_air 的 rh_frac）
+    用的是小数，同名不同量纲曾经埋过雷（B-24）。
+    """
+    v = _finite(rh_pct, '相对湿度')
     if not (0.0 < v <= RH_MAX):
         raise InputError(f"相对湿度需在 (0, {RH_MAX:g}] % 范围内（收到 {v:g}）")
     return v
@@ -438,21 +431,26 @@ def calculate_dewpoint(T_g, T_w, P, max_iter=500, tol=1e-6,
                 _add(results, on_result, name, '计算失败')
     return results
 
-def calculate_both(initial_guess, T_g, rh, P=1013.25, max_iter=50, tol=1e-6,
+def calculate_both(initial_guess, T_g, rh_pct, P=1013.25, max_iter=50, tol=1e-6,
                    on_result=None, on_iter=None):
-    """模式2：已知干球 T_g、相对湿度 rh(%)，同时求露点与湿球。"""
+    """模式2：已知干球 T_g、相对湿度 rh_pct(**百分数**，60 = 60%)，同时求露点与湿球。
+
+    单位契约（B-24）：本函数的相对湿度参数是**百分数**，与 derive_moist_air 的
+    rh_frac（**小数**）刻意不同名 —— 此前两处同名 rh 而量纲不同，
+    `calculate_both(..., rh=60)` 与 `derive_moist_air(..., rh=0.6)` 并存会直接埋雷。
+    """
     check_temperature(T_g, '干球温度')
-    check_relative_humidity(rh)
+    check_relative_humidity(rh_pct)
     check_pressure(P)
     results = []
-    rh_d = rh / 100
+    rh_frac = rh_pct / 100
     for f in FORMULAS:
         name = f['name']
         if not (f['tmin'] <= T_g <= f['tmax']):
             _add(results, on_result, name, '不适用')
             continue
         try:
-            e = calculate_esat(T_g, name) * rh_d
+            e = calculate_esat(T_g, name) * rh_frac
             Td = esat_calculate(e, name, max_iter, tol)
             T_w, status = _solve_wetbulb(T_g, e, P, initial_guess, f, max_iter, tol, on_iter)
             if status == 'ok':
@@ -472,11 +470,15 @@ def calculate_both(initial_guess, T_g, rh, P=1013.25, max_iter=50, tol=1e-6,
     return results
 
 # ------------------------ 扩展气象参数（派生量） ------------------------
-def derive_moist_air(T_g, T_w, Td, rh, P=1013.25, method='Goff-水面'):
-    """由干球 T_g(℃)、湿球 T_w(℃)、露点 Td(℃)、相对湿度 rh(0~1)、压强 P(hPa)
-    推导"常用气象参数"面板的全部派生量，返回 dict。
+def derive_moist_air(T_g, T_w, Td, rh_frac, P=1013.25, method='Goff-水面'):
+    """由干球 T_g(℃)、湿球 T_w(℃)、露点 Td(℃)、相对湿度 rh_frac(**小数**，0.6 = 60%)、
+    压强 P(hPa) 推导"常用气象参数"面板的全部派生量，返回 dict。
 
-    T_w 仅用于取湿球饱和水汽压 esw；Td 决定实际水汽压 e；rh 仅用于 LCL。
+    单位契约（B-24）：本函数的相对湿度参数是**小数**，与 calculate_both 的
+    rh_pct（**百分数**）刻意不同名 —— 此前两处同名 rh 而量纲不同，
+    调用方按错的那个传值就会得到 InputError 或错结果。
+
+    T_w 仅用于取湿球饱和水汽压 esw；Td 决定实际水汽压 e；rh_frac 仅用于 LCL。
     比热容与气体常数一律用 J/(kg·K)（比气体常数），不得与摩尔气体常数混用。
 
     返回字段（单位见括注）：
@@ -484,15 +486,17 @@ def derive_moist_air(T_g, T_w, Td, rh, P=1013.25, method='Goff-水面'):
       ro_dry/ro_vapor/ro(kg/m³)  dm1(g/kg)  L_v(kJ/kg)  han(kJ/kg)
       sat_mixing_ratio(g/kg)  absolute_humidity(g/m³)  specific_humidity(g/kg)
       q(kg/kg)  virtual_temp_K/theta_K/theta_e_K/theta_v_K(K)
-      t_lcl_C(℃)  p_lcl_hPa(hPa)   —— rh<=0 或 LCL 不可解时为 nan
+      t_lcl_C(℃)  p_lcl_hPa(hPa)   —— rh_frac<=0 或 LCL 不可解时为 nan
     """
     check_temperature(T_g, '干球温度')
     check_temperature(T_w, '湿球温度')
     check_temperature(Td, '露点温度')
     check_pressure(P)
-    rh = _finite(rh, '相对湿度')
+    rh = _finite(rh_frac, '相对湿度')
     if not (0.0 <= rh <= 1.0):
-        raise InputError(f"相对湿度（小数）需在 [0, 1] 范围内（收到 {rh:g}）")
+        raise InputError(
+            f"相对湿度（小数，0.6 表示 60%）需在 [0, 1] 范围内（收到 {rh:g}）。"
+            f"若手上是百分数，请改用 calculate_both(..., rh_pct={rh:g}) 那条入口。")
 
     T_g_K = T_g + 273.15
     Cp = 1004.7463 + 0.05 * T_g      # 干空气定压比热 (J/(kg·K))

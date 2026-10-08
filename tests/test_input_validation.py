@@ -3,9 +3,12 @@
 
 审计发现：旧版"校验只活在 GUI 回调里"，引擎层是裸的——
 RH=120% 照常给数、P=0/-100 照常给数、RH=0 时二分族把下界 -150 ℃ 当成正常露点返回，
-而批量计算（process_excel_file）根本不经过 check_input。
+而批量计算（process_excel_file）**不经过 GUI 的 check_input**。
 
-本文件确保"核心不依赖调用方守规矩"。
+不经过 GUI 校验 ≠ 没有校验：批量每一行都会走到 core，非法值由 core 抛 InputError，
+批量侧靠 `except (ValueError, TypeError)` 把它记成空值、继续处理下一行（见
+main.py 的 process_excel_file 与 test_input_error_is_a_value_error）。
+本文件确保"核心不依赖调用方守规矩"，也确保批量不会因为一行脏数据整表中断。
 """
 import math
 
@@ -101,3 +104,51 @@ def test_input_error_message_names_the_field():
         core.calculate_both(25, 25, 150)
     msg = str(ei.value)
     assert '相对湿度' in msg and '100' in msg
+
+
+# ------------------------------------------- 相对湿度的两种量纲（B-24）
+# 同名不同量纲是这类代码里最容易埋的雷：同样叫 rh，
+# calculate_both 收**百分数**（60 = 60%），derive_moist_air 收**小数**（0.6 = 60%）。
+# 现在参数名分别是 rh_pct / rh_frac，下面把"名字 + 量纲"一起钉住：
+# 谁把名字改回去、或者谁把小数传进百分数入口，这里都会立刻红。
+
+def test_calculate_both_speaks_percent():
+    """calculate_both 的相对湿度参数是百分数，且必须叫 rh_pct。
+
+    量纲写错不会报错、只会算错 —— 所以这里同时用"名字"（TypeError）与"结果"
+    （60 与 0.6 是两个完全不同的湿度）两条证据把契约钉住。
+    """
+    wet = {r['method']: r['result1'] for r in core.calculate_both(20, 25, rh_pct=60)}['Goff-水面']
+    dry = {r['method']: r['result1'] for r in core.calculate_both(20, 25, rh_pct=0.6)}['Goff-水面']
+    assert wet > 10, f"25 ℃ / 60% 的露点应约 16.7 ℃，实际 {wet}（把 60 当小数就会算错）"
+    assert dry < 0, f"25 ℃ / 0.6% 的露点应远低于 0 ℃，实际 {dry}（把 0.6 当 60% 就会算错）"
+    # 旧名字必须消失：仍然接受 rh= 说明这层契约没改干净
+    with pytest.raises(TypeError):
+        core.calculate_both(20, 25, rh=60)
+
+
+def test_derive_moist_air_speaks_fraction():
+    """derive_moist_air 的相对湿度参数是小数，且必须叫 rh_frac。"""
+    d = core.derive_moist_air(25.0, 20.0, 15.0, rh_frac=0.54, P=1013.25)
+    assert d['sat_mixing_ratio'] > 0
+    with pytest.raises(core.InputError) as ei:
+        core.derive_moist_air(25.0, 20.0, 15.0, rh_frac=54.0)
+    # 报错要把量纲说清楚，否则调用方只会看到"需在 [0, 1] 范围内"而不知为何
+    assert '小数' in str(ei.value)
+    with pytest.raises(TypeError):
+        core.derive_moist_air(25.0, 20.0, 15.0, rh=0.54)
+
+
+def test_two_rh_entries_agree_at_the_same_humidity():
+    """同一个物理湿度在两条入口上必须自洽（B-24 的行为证据）。
+
+    calculate_both 用 rh_pct=60 反算出露点；把那个露点交给 derive_moist_air
+    （rh_frac 是小数 0.60）后，它算出的水汽压必须回到 esat(25 ℃)×60%。
+    这一步顺带覆盖了真实数据流："MODE2 算出的露点 → 扩展参数面板"。
+    """
+    method = 'Goff-水面'
+    td = {r['method']: r['result1'] for r in core.calculate_both(20, 25, rh_pct=60)}[method]
+    d = core.derive_moist_air(25.0, 20.0, td, rh_frac=0.60, P=1013.25)
+    expected = core.calculate_esat(25, method) * 0.60
+    assert d['e'] == pytest.approx(expected, rel=2e-3), (
+        f"两条入口的湿度不一致：derive 的 e={d['e']}，而 60% × esat(25)={expected}")

@@ -139,8 +139,27 @@ Do **not** use `v1.0.0`, `v1.0.1` or `v1.2.0`: they contain serious bugs.
   `Could not find the Qt platform plugin "windows"`. Fixed by exporting the real path via
   `QT_PLUGIN_PATH`. Details in `main.py`.
 - **Added** — engine-level input validation; applicability determined by the temperatures
-  actually used; `tests/` with external-reference regression (248 assertions); GitHub
+  actually used; `tests/` with external-reference regression (254 assertions); GitHub
   Actions CI; `run_tests.ps1`.
+- **Removed** — **the "local gravity" input** (widget, the `g` key in `cfg.json`, and its
+  read/write helpers). It never entered a single calculation since v1.2.0 (see the known
+  limitations and B-20 in `docs/项目编年史.md`), and no quantity this tool computes depends
+  on `g` — the only related unit, mmHg/cmHg, is a **defined** value
+  (1 mmHg = 133.322387415 Pa) and has nothing to do with gravity. A box that silently
+  changes nothing is worse than no box at all.
+- **Fixed** — **the packaged exe crashed on launch** (`ModuleNotFoundError: No module named
+  'calculator1'`). `build.ps1` passed `--add-data` (assets) but no `--paths`, while `main.py`
+  injects `src/` and `src/ui/` into `sys.path` at **runtime** — invisible to PyInstaller's
+  static analysis. As a result `core`/`calculator1`/`unit`/`about` were all absent from the
+  bundle (all four listed in `build/*/warn-*.txt`). The build now passes
+  `--paths "src" --paths "src/ui"`, verifies the warn file afterwards and aborts if a local
+  module is missing; a regression guard was added to `tests/test_repo_hygiene.py`.
+- **Fixed** — the relative-humidity parameter of `calculate_both` and `derive_moist_air` had
+  the same name with different units (percent vs fraction). Now renamed to `rh_pct` /
+  `rh_frac` and pinned by tests.
+- **Fixed** — the GUI regression test was permanently red locally and green in CI on Chinese
+  Windows (child wrote cp936 into the pipe, parent decoded UTF-8, so `℃` became mojibake).
+  The probe now writes UTF-8 JSON to a file, and `PYTHONUTF8=1` is set in `run_tests.ps1`/CI.
 
 ### Source dependencies
 
@@ -189,7 +208,7 @@ correctness verification against published reference values.
 
 ```bash
 python src/core.py                   # equivalence regression (stdlib only)
-python -m pytest -q                  # correctness vs WMO/ASHRAE references (248 assertions)
+python -m pytest -q                  # correctness vs WMO/ASHRAE references (254 assertions)
 python -m pyflakes main.py src/core.py   # undefined names / unused imports
 ```
 
@@ -336,15 +355,21 @@ the tolerance table in `tests/test_esat_reference.py` so CI keeps an eye on its 
    K). It agrees with the "LCL ≈ 125·(T − T_d) m" rule of thumb to within 1.2 K but differs
    from the strict Bolton solution by about 1 K and has not been checked against an external
    truth value.
-6. **The gravity setting does not enter any calculation.** It is only written to `cfg.json`
-   and shown as a placeholder. The v1.2.0 release note claiming it improves accuracy is wrong
-   and has been corrected.
+6. **Relative humidity must be greater than 0 %.** The accepted range is `(0, 100]`, so
+   `RH = 0` is rejected outright instead of returning a fake number. Physically, dry air is a
+   legitimate input (no dew point, wet bulb = dry bulb), so a status value would be more
+   generous — but the old code answered `RH = 0` with `−150 ℃` (the bisection floor), and
+   refusing is safer than guessing. Use a tiny value such as 0.001 % if you need the dry limit,
+   or use mode 0/1 instead.
 7. **Batch calculation does not checkpoint.** `result_*.xlsx` is written only after the whole
    table is processed.
 8. **The GUI is not covered in CI.** `main.py` needs PySide2, so CI only compiles it. Locally,
    `tests/test_repo_hygiene.py` constructs the real windows on an offscreen Qt platform when a
    suitable interpreter is available; interactions (unit dialog, batch writing) still need a
-   human.
+   human. Those three GUI tests are **always skipped in CI** (PySide2 cannot be installed
+   there — see the workflow comment and B-23): "CI is green" proves the engine and repo
+   hygiene, not the interface. `run_tests.ps1` prints exactly which tests were skipped, and
+   you can point `WETBULB_GUI_PYTHON` at the 3.10 interpreter to run them locally.
 9. **The psychrometric coefficient A is not the WMO one.** This project uses
    `0.000667(1+0.00115·t_w)`, which comes from FAO *Frost Protection* Annex 3 (citing
    Fritschen & Gay, 1979) — **not** from WMO-No. 8, which specifies the Assmann form

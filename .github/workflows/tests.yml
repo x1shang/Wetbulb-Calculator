@@ -2,6 +2,15 @@ name: tests
 # 审计结论："10/10 仓库零 CI —— 你的验证全靠人记得跑"。
 # 这个工作流把"我说通过"换成"机器说通过"：每次 push / PR 都在一台干净机器上重跑。
 # 判定成败的唯一依据是退出码（0 = 成功），不读任何打印信息。
+#
+# ⚠️ 覆盖边界（B-23）：CI 只装 requirements-dev.txt（pytest + pyflakes），
+#    所以下面三条 GUI 测试在这里**必然 skip**，只在本地装了 PySide2 的 3.10 环境时才跑：
+#      · test_main_import_still_works_when_gui_stack_is_available
+#      · test_gui_windows_construct_offscreen
+#      · test_gui_full_calculation_flow          ← B-07 的回归测试，最重要的一条
+#    也就是说"CI 绿"只证明计算核心与仓库卫生，不证明界面。要覆盖 GUI，要么在本地
+#    跑 run_tests.ps1（它会显式提示哪些被 skip 了），要么照 docs/改进操作说明书.md 里
+#    记的配方补一条 Linux + PySide2 + offscreen 的 job（未验证，故未加入流水线）。
 
 on:
   push:
@@ -15,6 +24,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # B-22 的同类防线：把整条流水线的 IO 编码固定成 UTF-8，
+    # 免得"本地 cp936 / CI utf-8"这种环境差异造出假红假绿。
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
     strategy:
       fail-fast: false
       matrix:
@@ -38,8 +52,9 @@ jobs:
       - name: 计算核心等价性回归（零依赖入口）
         run: python src/core.py
 
+      # -rs：把 skip 的原因写进日志，让"哪一块没被覆盖"在每次运行里都可见
       - name: 计算核心正确性验证（对照公开参考值）
-        run: python -m pytest -q
+        run: python -m pytest -q -rs
 
       # tests/ 覆盖不到 GUI：main.py 依赖 PySide2，CI 里装不上也跑不起来。
       # 至少做语法编译，避免把写错的文件推上去。

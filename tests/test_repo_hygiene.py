@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 import textwrap
+import json
+import tempfile
 
 import pytest
 
@@ -136,6 +138,79 @@ def test_config_helpers_are_defined_only_once():
         assert where == ['src/core.py'], f"{name} 的定义出现在 {where}，应只在 src/core.py"
 
 
+def test_gravity_setting_is_fully_removed():
+    """B-20 收尾：'本地重力加速度' 连界面、配置与读写函数一起删除，不得复活。
+
+    它自 v1.2.0 出现起就没进过任何公式，却让用户以为"改了它结果会更准"。
+    而本工具用到的物理量都不含 g；唯一沾边的 mmHg/cmHg 是**定义值**
+    （1 mmHg = 133.322387415 Pa），与重力加速度无关 —— 也就是说这个参数
+    在物理上无处可用，不是"暂时没接上"。
+
+    扫描时按 `#` 截断，跳过注释：源码里允许用注释记录这段历史，
+    但不允许标识符重新出现在真正的代码里。
+    """
+    cfg = json.loads(_read('assets/cfg.json'))
+    assert 'g' not in cfg, f"assets/cfg.json 里不该再有 g 键：{cfg}"
+
+    pattern = re.compile(r'LineEdit_4|label_6|load_g_value|save_g_value|update_g_value')
+    offenders = []
+    for rel in _source_files():
+        for i, line in enumerate(_read(rel).splitlines(), 1):
+            if pattern.search(line.split('#', 1)[0]):
+                offenders.append(f"{rel}:{i}: {line.strip()}")
+    assert not offenders, ("重力加速度设置的残骸还在代码里：\n" + "\n".join(offenders)
+                           + "\n（若只是注释里的历史说明，请确认它确实在 # 之后）")
+
+
+def test_build_script_gives_pyinstaller_the_module_search_paths():
+    """打包必须把 src/ 与 src/ui/ 交给 PyInstaller —— 否则 exe 一启动就 ModuleNotFoundError。
+
+    这是一次实测事故：build.ps1 第一版只传了 `--add-data`（资源文件）而没传 `--paths`，
+    PyInstaller 于是把 `core` / `calculator1` / `unit` / `about` 全部记成
+    "missing module ... imported by main.py"（`build/WetBulbCalculator/warn-*.txt` 里四条齐全），
+    打出来的 exe 双击即弹：
+
+        ModuleNotFoundError: No module named 'calculator1'
+
+    根因：main.py 里的 `sys.path.insert(...)` 是**运行时**行为，PyInstaller 的静态分析
+    看不见它 —— 它只认 `--paths`（等价于 spec 里的 `pathex`）与 `--hidden-import`。
+    """
+    script = _read('build.ps1')
+    dirs = [os.path.normpath(os.path.join(ROOT, p.strip('/\\')))
+            for p in re.findall(r"--paths\s+['\"]?([^'\"\s`]+)", script)]
+    assert dirs, "build.ps1 没给 PyInstaller 任何 --paths（打包会漏掉 src/ 与 src/ui/ 下的模块）"
+
+    # main.py 从源码树里 import 的每个本地模块，都必须能在 main.py 所在目录
+    # （PyInstaller 总会有）或某个 --paths 目录里被静态解析到。
+    main_src = _read('main.py')
+    names = set(re.findall(r'^\s*from\s+([A-Za-z_]\w*)\s+import', main_src, re.M))
+    names |= set(re.findall(r'^\s*import\s+([A-Za-z_]\w*)\s*$', main_src, re.M))
+    root = os.path.normpath(ROOT)
+    resolved = {}
+    for name in sorted(names):
+        for d in [root, *dirs]:
+            if os.path.exists(os.path.join(d, name + '.py')):
+                resolved[name] = d
+                break
+    local = sorted(n for n, d in resolved.items() if d != root)
+    assert local == ['about', 'calculator1', 'core', 'unit'], (
+        f"只有 {local} 能被 PyInstaller 静态解析到；core/calculator1/unit/about "
+        f"四个都应当靠 --paths 命中（当前 --paths = {dirs}）")
+
+    # WetBulbCalculator.spec 是 **build.ps1 的产物**（.gitignore 里 `*.spec`），不进仓库，
+    # 所以只在它存在时（本机刚打过包）顺手核对一遍 pathex；干净检出/CI 上没有它是正常的。
+    spec_path = os.path.join(ROOT, 'WetBulbCalculator.spec')
+    if os.path.exists(spec_path):
+        m = re.search(r'pathex=\[(.*?)\]', _read('WetBulbCalculator.spec'), re.S)
+        spec_dirs = [e if os.path.isabs(e) else os.path.normpath(os.path.join(ROOT, e))
+                     for e in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1) if m else '')]
+        for name in local:
+            assert any(os.path.exists(os.path.join(d, name + '.py'))
+                       for d in [root, *spec_dirs]), (
+                f"WetBulbCalculator.spec 的 pathex 解析不到 {name}.py（当前 {spec_dirs}）："
+                "直接用 spec 打包同样会漏模块")
+
+
 def test_no_personal_absolute_paths():
     """个人绝对路径（形如 C: 盘下的 Users 目录）既泄露信息，也让别人无法复现构建。
 
@@ -167,6 +242,20 @@ def test_no_personal_absolute_paths():
                 if pattern.search(line):
                     offenders.append(f"{rel}:{i}: {line.strip()}")
     assert not offenders, "发现个人绝对路径：\n" + "\n".join(offenders)
+
+    # B-27：上面那条正则只认 C:\Users\...，而"本机路径"还有一种更隐蔽的形态 ——
+    # 把项目自己的虚拟环境绝对路径写进注释（例如调试 Qt 插件时那条实测记录），
+    # 它对别人毫无用处、还会泄露目录结构。只扫**发货文件**（main.py 与 src/**）：
+    # tests/ 里的解释器探测候选是有意保留的本机提示，不算泄漏。
+    venv_pattern = re.compile(r'[A-Za-z]:[\\/][^\s"\'<>]*?[\\/]\.?venv[\w.-]*[\\/]',
+                              re.IGNORECASE)
+    leaked = []
+    for rel in [p for p in _source_files() if p == 'main.py' or p.startswith('src/')]:
+        for i, line in enumerate(_read(rel).splitlines(), 1):
+            if venv_pattern.search(line):
+                leaked.append(f"{rel}:{i}: {line.strip()}")
+    assert not leaked, ("发货文件里出现了本机虚拟环境的绝对路径（请改成通用示例路径）：\n"
+                        + "\n".join(leaked))
 
 
 def _git(*args):
@@ -337,8 +426,9 @@ def test_gui_full_calculation_flow():
         print("MODE2_ROWS", len(rows2))
         print("MODE2_GOFF", [r for r in rows2 if r.startswith("Goff-水面")])
     ''')
-    proc = _run_with_gui(exe, code)
-    out = proc.stdout or ''
+    proc, records = _run_probe(exe, code)
+    assert records, _probe_failed(proc, records)
+    out = '\n'.join(records)
     assert 'ERRBAR' not in out, f"计算过程弹出了错误条（说明异常被吞掉了）：\n{out}"
     # 表头 1 行 + 14 条公式；注意列表末尾还有一行空串，所以是 16
     assert 'MODE0_ROWS 16' in out, f"模式0 没有把结果填进列表：\n{out}"
@@ -416,6 +506,7 @@ def _gui_interpreter():
         os.environ.get('WETBULB_GUI_PYTHON'),                         # 手动指定（任意路径）
         os.path.join(ROOT, '.venv-build', 'Scripts', 'python.exe'),   # 打包/自测用的 3.10 环境
         sys.executable,
+        r'D:\dsh\init\.venv-qyb310\Scripts\python.exe',               # build.ps1 挑中的打包环境
         r'D:\dsh\init\.py310\python.exe',
     ]
     for exe in candidates:
@@ -431,9 +522,52 @@ def _gui_interpreter():
     return None
 
 
-def _run_with_gui(exe, code):
-    return subprocess.run([exe, '-c', code], cwd=ROOT, capture_output=True, text=True,
-                          timeout=300, encoding='utf-8', errors='replace')
+def _run_probe(exe, code, timeout=300):
+    """在子进程里跑一段探针代码，把它的 print 输出取回来 —— **不经控制台编码**。
+
+    这是 B-22 的修复。此前父进程写死 `encoding='utf-8'` 去读子进程的 stdout，
+    而子进程在中文 Windows 上按 **cp936** 写管道：'℃' 被写成 GBK 字节，父进程按
+    UTF-8 解码成 'Goff-\u02ee\ufffd\ufffd'，于是 `Goff-水面 18.6186℃` 那行
+    永远断言不过 —— 本地恒红、CI 恒绿（CI 上没有 GUI 解释器，这条测试直接 skip）。
+    一条"守 B-07 静默不显示"的回归测试一旦习惯性发红，它的报警就没人看了。
+
+    现在探针把结果写进 **UTF-8 JSON 文件**，父进程读文件断言：既不受控制台
+    codepage 影响，也不依赖 PYTHONIOENCODING 有没有被设对。
+    顺带把子进程环境的 PYTHONUTF8 也打开（双保险，且 stdout 仍留作诊断）。
+
+    返回 (CompletedProcess, records)。records 为 None 表示探针没能写出结果
+    （多半是子进程崩了）——调用方应把它当成失败，并打印 proc.stderr。
+    """
+    env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'}
+    with tempfile.TemporaryDirectory(prefix='wetbulb-probe-') as td:
+        out_path = os.path.join(td, 'probe.json')
+        env['WETBULB_PROBE_OUT'] = out_path
+        # 探针里所有 print(...) 都变成"收集一行"，最后由 wrapper 统一写成 JSON。
+        wrapper = (
+            "import json, os\n"
+            "_records = []\n"
+            "print = lambda *a, **k: _records.append(' '.join(str(x) for x in a))\n"
+            + textwrap.dedent(code) + "\n"
+            "with open(os.environ['WETBULB_PROBE_OUT'], 'w', encoding='utf-8') as _f:\n"
+            "    json.dump(_records, _f, ensure_ascii=False)\n")
+        try:
+            proc = subprocess.run([exe, '-c', wrapper], cwd=ROOT, capture_output=True,
+                                  text=True, timeout=timeout, encoding='utf-8',
+                                  errors='replace', env=env)
+        except subprocess.TimeoutExpired as e:
+            # 超时也算"探针没写出结果"，交给调用方报错时带上 timeout 信息
+            return e, None
+        records = None
+        if os.path.exists(out_path):
+            with open(out_path, encoding='utf-8') as f:
+                records = json.load(f)
+    return proc, records
+
+
+def _probe_failed(proc, records):
+    """探针失败时的统一报错文本（含 stdout/stderr，便于定位）。"""
+    tail = '' if proc is None else f"\n--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+    return f"探针没有写出结果文件（子进程崩了或超时）：{records}{tail}"
 
 
 def test_main_import_still_works_when_gui_stack_is_available():
@@ -445,17 +579,18 @@ def test_main_import_still_works_when_gui_stack_is_available():
     exe = _gui_interpreter()
     if exe is None:
         pytest.skip('本机没有装齐 GUI 依赖（PySide2 + NumPy 1.x）的解释器')
-    proc = _run_with_gui(exe, 'import main; print("IMPORT_OK")')
-    assert 'IMPORT_OK' in (proc.stdout or ''), (
-        f"import main 失败（{exe}）：\n{proc.stdout}\n{proc.stderr}")
+    proc, records = _run_probe(exe, 'import main; print("IMPORT_OK")')
+    assert records, _probe_failed(proc, records)
+    assert any('IMPORT_OK' in r for r in records), (
+        f"import main 失败（{exe}）：\n{records}\n{getattr(proc, 'stderr', '')}")
 
 
 def test_gui_windows_construct_offscreen():
     """用 offscreen 平台把主窗口与两个对话框**真的构造一遍**（不进事件循环）。
 
     这是 GUI 能被自动化覆盖到的极限，但覆盖的正是整理目录最容易改坏的东西：
-    资源路径（图标）、assets/cfg.json（主题色 / 重力加速度占位符）、
-    以及全部控件与信号连接。构造成功 = 这些路径都还是对的。
+    资源路径（图标）、assets/cfg.json（主题色）、以及全部控件与信号连接。
+    构造成功 = 这些路径都还是对的。
     """
     exe = _gui_interpreter()
     if exe is None:
@@ -482,15 +617,17 @@ def test_gui_windows_construct_offscreen():
             k in about.references.toPlainText()
             for k in ("WMO-No. 8", "ASHRAE", "Stull", "Goff", "Hyland", "Buck",
                       "Marti", "Murphy", "Fritschen", "周西华")))
-        print("unit_g_placeholder=", w.LineEdit_4.placeholderText())
+        print("gravity_widget_gone=", not hasattr(w, "LineEdit_4") and not hasattr(w, "label_6"))
     ''')
-    proc = _run_with_gui(exe, code)
-    out = proc.stdout or ''
-    assert 'WINDOW_OK' in out, f"GUI 构造失败（{exe}）：\n{out}\n{proc.stderr}"
+    proc, records = _run_probe(exe, code)
+    assert records, _probe_failed(proc, records)
+    out = '\n'.join(records)
+    assert 'WINDOW_OK' in out, f"GUI 构造失败（{exe}）：\n{out}"
     assert 'icon_null= False' in out, (
         f"主窗口图标没加载成功 —— resource_path(APP_ICON) 多半指错了：\n{out}")
     # 关于框里的参考文献必须是"真的写进去了"，而不是空白面板
     assert 'about_has_grades= True' in out, (
         f"关于框的参考文献面板缺内容（应包含 WMO/ASHRAE/Stull/Goff/Wexler/Buck 与周西华）：\n{out}")
     assert 'about_refs_chars= 0' not in out, f"参考文献面板是空的：\n{out}"
-    assert 'unit_g_placeholder= 9.81' in out or 'unit_g_placeholder= ' in out, out
+    assert 'gravity_widget_gone= True' in out, (
+        f"主窗口里还能找到 LineEdit_4 / label_6 —— 重力加速度控件没删干净：\n{out}")

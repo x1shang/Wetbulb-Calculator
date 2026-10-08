@@ -41,7 +41,8 @@ import webbrowser
 # 根因：PySide2 把自己的包目录交给 Qt 时要经过一次窄字符(ANSI)转换，
 # 非 ASCII 的路径会变成 "???"：
 #     QLibraryInfo.location(PluginsPath) ->
-#     'D:/desktop/projpy/???/.venv-build/lib/site-packages/PySide2/plugins'   ← exists = False
+#     '<某个含中文的路径>/???/.venv/lib/site-packages/PySide2/plugins'   ← exists = False
+#   （实测时用的是本机的虚拟环境；此处写成通用示例，避免把个人路径带进公开仓库。）
 # 于是 Qt 的插件搜索路径是空的，连 qwindows.dll 都找不到。
 # 注意：`import main` 不会触发它（不需要平台插件），只有真正建 QApplication 才炸——
 # 所以"导入通过"不等于"能启动"。
@@ -91,9 +92,9 @@ plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 # ======================================================================
-# 计算核心与配置统一由 src/core.py 提供（版本号、精度、重力加速度、公式引擎）
+# 计算核心与配置统一由 src/core.py 提供（版本号、精度、公式引擎）
 # ======================================================================
-from core import (tot as default_tol, APP_ICON, resource_path, save_g_value,
+from core import (tot as default_tol, APP_ICON, resource_path,
                   load_title_color, calculate_wetbulb, calculate_dewpoint,
                   calculate_both, derive_moist_air)
 
@@ -109,6 +110,8 @@ tot = default_tol
 # 【已删除的死代码 · v1.3.1】此处原有 16 行被注释掉的 load_g_value / save_g_value 副本，
 # 引用的还是整理前的 `resource_path('cfg.json')`。配置读写现在只在 src/core.py 实现一次
 # （见 tests/test_repo_hygiene.py::test_config_helpers_are_defined_only_once）。
+# 【已移除 · 打包重建】上面那句里提到的两个函数现已彻底删除：cfg.json 只剩 title_color，
+# "本地重力加速度" 这个从不参与计算的参数连界面一起拿掉了（见 B-20）。
 # 版本号同理：v1.3.0 起只在 core.py 定义 `tag`。
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体
@@ -269,7 +272,6 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.setClearButtonEnabled(True)
         self.LineEdit_2.setClearButtonEnabled(True)
         self.LineEdit_3.setClearButtonEnabled(True)
-        self.LineEdit_4.setClearButtonEnabled(True)
         self.dial.setNotchesVisible(True)
         self.dial.setRange(2, 10)
         self.dial.setValue(7)
@@ -321,10 +323,9 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.returnPressed.connect(lambda: self.LineEdit_2.setFocus())
         self.LineEdit.returnPressed.connect(lambda: self.check_input(self.LineEdit, self.label_2.text().rstrip("：")))
         
-        # 重力加速度输入
-        self.LineEdit_4.returnPressed.connect(lambda: self.check_input(self.LineEdit_4, "重力加速度"))
-        self.LineEdit_4.returnPressed.connect(self.update_g_value)
-        self.LineEdit_4.returnPressed.connect(self.LineEdit_4.clear)  # 添加清空操作
+        # 【已移除 · 打包重建】此处原有"重力加速度输入"三行绑定（LineEdit_4 →
+        # check_input / update_g_value / clear）。该输入框从不参与任何计算（B-20），
+        # 控件本身也已删除，故绑定一并拿掉。
         
         # 迭代图按钮
         self.pushButton.clicked.connect(self.show_convergence_plot)
@@ -400,7 +401,6 @@ class main_window(QWidget, Ui_wetbulb):
         self.LineEdit.clear()
         self.LineEdit_2.clear()
         self.LineEdit_3.clear()
-        self.LineEdit_4.clear()
         self.calculator = None
 
     def take_screenshot(self):
@@ -464,23 +464,6 @@ class main_window(QWidget, Ui_wetbulb):
             ini = T - 2 if T < 0 else T - 5
             return ini
             
-    def update_g_value(self):
-        try:
-            g_input = float(self.LineEdit_4.text())
-            if g_input <= 0:
-                self.createErrorInfoBar("重力加速度必须大于0！")
-                self.LineEdit_4.clear()
-                return
-            # 只落盘 + 更新界面：g 不参与任何公式计算（见 core.py 中的说明），
-            # 旧版改的模块级 g 是个不会被读取的全局量。
-            save_g_value(g_input)
-            self.LineEdit_4.setPlaceholderText(f"{g_input:.2f} m/s²")  # 直接更新placeholderText
-            self.LineEdit_4.clear()  # 清空输入框
-            self.createSuccessInfoBar(f"重力加速度已更新为 {g_input} m/s²")
-        except ValueError:
-            self.createErrorInfoBar("重力加速度必须是有效数字！")
-            self.LineEdit_4.clear()
-
     def check_input(self, line_edit, field_name):
         text = line_edit.text().strip()
         if not text:
@@ -506,11 +489,6 @@ class main_window(QWidget, Ui_wetbulb):
                     min_ui = self.prechange(500)
                     max_ui = self.prechange(1100)
                     self.createErrorInfoBar(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
-                    line_edit.clear()
-                    return False
-            elif "重力加速度" in field_name:
-                if value <= 0:
-                    self.createErrorInfoBar("重力加速度必须大于0！")
                     line_edit.clear()
                     return False
             elif "相对湿度" in field_name:
@@ -582,7 +560,8 @@ class main_window(QWidget, Ui_wetbulb):
                 except ValueError as e:
                     self.createErrorInfoBar(str(e))
                     return
-                self.calculator = self._run_calc(calculate_both, initial_guess, T, rh, P, tol=tot)
+                self.calculator = self._run_calc(calculate_both, initial_guess, T, tol=tot,
+                                                 rh_pct=rh, P=P)
                 output = self.calculator.show_results("露点温度", "湿球温度", temperature_unit=self.temperature_unit)
             
             self.list_model.setStringList(output.split('\n'))  # 按行分割字符串
@@ -636,7 +615,7 @@ class main_window(QWidget, Ui_wetbulb):
             # 派生量统一交给 core.derive_moist_air（纯函数、无 GUI 依赖、可被 tests/ 覆盖）。
             # 旧版在 GUI 回调里手写这 60 行，其中比热容误用摩尔气体常数、
             # 水汽密度误用 esw、饱和混合率误用 e —— 详见 core.py 中的注释。
-            derived = derive_moist_air(T_g, Tw, Td, rh, P_hPa, method_name)
+            derived = derive_moist_air(T_g, Tw, Td, rh_frac=rh, P=P_hPa, method=method_name)
 
             es1 = self.prechange(derived['es'])
             esw1 = self.prechange(derived['esw'])
@@ -770,9 +749,12 @@ class main_window(QWidget, Ui_wetbulb):
                             results.append(None)
                             
                     elif mode == 2:  # 已知相对湿度同时求露点和湿球
-                        rh = float(row['B'])  # 相对湿度不需要单位转换
-                        initial_guess = self.get_initial_guess(T, rh)
-                        calculator = self._run_calc(calculate_both, initial_guess, T, rh, P)
+                        rh_pct = float(row['B'])  # 相对湿度不需要单位转换；core 这边收**百分数**
+                        # 初值：与界面单次计算一致，用干球温度占位（get_initial_guess 的
+                        # 第二个参数是"参考温度"，此前误传了 rh 这个百分数 —— 见 B-29 候选）
+                        initial_guess = self.get_initial_guess(T, T)
+                        calculator = self._run_calc(calculate_both, initial_guess, T,
+                                                    rh_pct=rh_pct, P=P)
                         method = 'Goff-水面' if T >= 0 else 'Goff-冰面'
                         for result in calculator.methods:
                             if result['method'] == method:

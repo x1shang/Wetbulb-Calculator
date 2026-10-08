@@ -10,11 +10,14 @@
 # 【手工改动记录 · v1.3.1】重新生成本文件后必须补回下面三点：
 #   1. 把表头里 pyuic5 写回的个人绝对路径换成相对文件名
 #      （由 tests/test_repo_hygiene.py::test_no_personal_absolute_paths 守着）
-#   2. 保留"从 core 取 load_title_color / load_g_value"的写法：配置与资源定位
-#      只在 src/core.py 实现一次。本文件此前有一份逐字重复的
-#      resource_path / cfg_file_path / load_g_value 副本，改歪一处就会让
-#      "配置到底读哪一份"取决于谁先被 import。
+#   2. 保留"从 core 取 load_title_color"的写法：配置与资源定位只在 src/core.py
+#      实现一次。本文件此前有一份逐字重复的 resource_path / cfg_file_path /
+#      load_g_value 副本，改歪一处就会让"配置到底读哪一份"取决于谁先被 import。
 #   3. setupUi 里 label8 的颜色改为读 cfg.json 的 title_color。
+#
+# 【已删除 · 打包重建】LineEdit_4「本地重力加速度」与 label_6 已移除：
+#   该输入框自 v1.2.0 起就没进过任何公式（B-20），而本工具用到的物理量都不含 g，
+#   mmHg/cmHg 又是与 g 无关的定义值。删掉后仍需人工保持的只有上面三点。
 
 import os
 import sys
@@ -24,7 +27,7 @@ _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from core import load_title_color, load_g_value
+from core import load_title_color
 
 from PySide2 import QtCore, QtGui, QtWidgets
 
@@ -145,17 +148,6 @@ class Ui_wetbulb(object):
         self.horizontalLayout_3.setObjectName("horizontalLayout_3")
         self.verticalLayout_5 = QtWidgets.QVBoxLayout()
         self.verticalLayout_5.setObjectName("verticalLayout_5")
-        self.LineEdit_4 = LineEdit(wetbulb)
-        self.LineEdit_4.setMaximumSize(QtCore.QSize(16777215, 33))
-        self.LineEdit_4.setObjectName("LineEdit_4")
-        self.verticalLayout_5.addWidget(self.LineEdit_4)
-        self.label_6 = QtWidgets.QLabel(wetbulb)
-        font = QtGui.QFont()
-        font.setFamily("AcadEref")
-        font.setPointSize(9)
-        self.label_6.setFont(font)
-        self.label_6.setObjectName("label_6")
-        self.verticalLayout_5.addWidget(self.label_6)
         self.label_5 = QtWidgets.QLabel(wetbulb)
         font = QtGui.QFont()
         font.setFamily("AcadEref")
@@ -242,8 +234,6 @@ class Ui_wetbulb(object):
         self.ComboBox.setItemText(0, _translate("wetbulb", "已知露点求湿球"))
         self.ComboBox.setItemText(1, _translate("wetbulb", "已知湿球求露点"))
         self.ComboBox.setItemText(2, _translate("wetbulb", "已知相对湿度"))
-        self.LineEdit_4.setPlaceholderText(_translate("wetbulb", f"{load_g_value():.2f} m/s²"))
-        self.label_6.setText(_translate("wetbulb", "<html><head/><body><p align=\"center\">本地重力加速度</p></body></html>"))
         self.label_5.setText(_translate("wetbulb", "<html><head/><body><p align=\"right\">精度调节旋钮</p></body></html>"))
         self.widget_iteration.setTitle(_translate("wetbulb", "迭代区"))
         self.ComboBox_2.setItemText(0, _translate("wetbulb", "Tw=Td"))
