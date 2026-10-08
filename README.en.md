@@ -24,9 +24,11 @@ hope that it is useful to other people doing meteorology.
 
 ## Highlights
 
-- **Verifiable precision.** Of the 14 formulas, Goff / Goff-Gratch / Wexler agree with
-  the WMO reference table to **within 0.09 %**. Every number in this README is re-checked
-  by CI on every push — see [Measured accuracy](#measured-accuracy) below.
+- **Verifiable precision.** The 14 formulas are compared against the **IAPWS official
+  equations** across each formula's entire registered range; the reference-grade ones
+  (Goff, Wexler) stay within **0.06 %**, and even the coarsest (`Marti`, ice) is stated at
+  2.01 %. Every number in this README is re-checked by CI on every push —
+  see [Measured accuracy](#measured-accuracy) below.
 - **Three modes:** dew point → wet bulb, wet bulb → dew point, and relative humidity → both.
 - **Batch calculation** over a whole xlsx column at once.
 - **20+ derived parameters** per result: enthalpy, mixing ratio, virtual temperature,
@@ -48,29 +50,44 @@ hope that it is useful to other people doing meteorology.
 > the numbers in the assertions — if the code regresses, CI turns red rather than the
 > documentation going quietly stale.
 
-### Saturation vapour pressure vs the WMO / Smithsonian reference table
+### Saturation vapour pressure vs the IAPWS official equations, swept over each formula's **entire registered range**
 
 | Formula | Registered range | Max deviation | Worst point |
 |---|---|---:|---|
-| Goff (water) | −10 – 100 ℃ | 0.09 % | 15 ℃ |
-| Goff-Gratch 1946 (water) | −10 – 100 ℃ | 0.09 % | 0 ℃ |
-| Wexler (water) | −10 – 200 ℃ | 0.09 % | 100 ℃ |
-| Tetens (water) | 0 – 50 ℃ | 0.09 % | 40 ℃ |
-| August (water) | 0 – 60 ℃ | 0.23 % | 20 ℃ |
-| Buck (water) | 0 – 80 ℃ | 0.24 % | 50 ℃ |
-| Magnus (water) | 0 – 60 ℃ | 0.27 % | 20 ℃ |
-| Gili (water) | −10 – 20 ℃ | 0.28 % | 15 ℃ |
-| Arden/Buck-1996 (water) | 0 – 100 ℃ (**usable only to ~25 ℃**) | 1.0 % @25 ℃, 3.6 % @50 ℃, 12.7 % @100 ℃ | 100 ℃ |
-| Goff-Gratch (ice) | −100 – 10 ℃ | 0.09 % | −50 ℃ |
-| Wexler (ice) | −150 – 10 ℃ | 0.04 % | −40 ℃ |
-| Magnus (ice) | −65 – 0 ℃ | 0.02 % | −50 ℃ |
-| Buck (ice) | −80 – 0 ℃ | 0.03 % | −20 ℃ |
-| Marti (ice) | −150 – 0 ℃ | 1.29 % | −50 ℃ |
+| Goff (water) | −10 – 100 ℃ | 0.06 % | 68 ℃ |
+| Goff-Gratch 1946 (water) | −10 – 100 ℃ | 0.12 % | −10 ℃ |
+| Wexler (water) | −10 – 200 ℃ | 0.02 % | 40 ℃ |
+| Arden / Buck-1996 3-parameter (water) | 0 – 50 ℃ | 0.04 % | 30 ℃ |
+| Buck (water) | 0 – 50 ℃ | 0.14 % | 50 ℃ |
+| Tetens (water) | 0 – 50 ℃ | 0.15 % | 45 ℃ |
+| Magnus (water) | 0 – 60 ℃ | 0.31 % | 28 ℃ |
+| August (water) | 0 – 60 ℃ | 0.38 % | 60 ℃ |
+| Gili (water) | −10 – 20 ℃ | 0.14 % | −10 ℃ |
+| Wexler (ice) | −100 – 0 ℃ | 0.03 % | −47 ℃ |
+| Goff-Gratch (ice) | −100 – 0 ℃ | 0.12 % | −100 ℃ |
+| Magnus (ice) | −65 – 0 ℃ | 0.20 % | −65 ℃ |
+| Buck (ice) | −80 – 0 ℃ | 0.83 % | −80 ℃ |
+| Marti (ice) | −103 – 0 ℃ | 2.01 % | −82 ℃ |
 
-> The reason Goff / Goff-Gratch / Wexler can vouch for the reference table: they are
-> independent published formulations and they agree with it to ≤0.09 %, so table and
-> formulas corroborate each other instead of one citing the other.
-> **Arden is a special case** — see [Known limitations](#known-limitations).
+> **How this table is produced.** `tests/test_esat_domain_sweep.py` samples 241 evenly spaced
+> points across each formula's *own* registered interval and compares them against the
+> **IAPWS-95** saturation line (Wagner & Pruß 2002) for water and the **IAPWS 2011**
+> sublimation-pressure equation for ice. The worst deviation is the third column.
+>
+> Why not the published meteorological table any more: that table's tabulated values are
+> themselves 0.02 %–0.10 % low relative to IAPWS (there is an assertion quantifying this),
+> and it only has 10 sample points — **the domain endpoints were never examined**. That is
+> how `Marti (ice)` sat at −9.93 % at −150 ℃ for so long (it was registered down to −150 ℃
+> while its fit only covers 170–273 K). The published table is kept as a **second,
+> independent** reference in `tests/test_esat_reference.py`.
+>
+> **Two coarse formulas deserve attention:** `Buck (ice)` is 0.83 % off at −80 ℃ and
+> `Marti (ice)` 2.01 % at −82 ℃. That is each formula's own accuracy, not an implementation
+> bug; their registered ranges were narrowed in v1.3.2 to what their sources actually claim.
+>
+> **`Arden (water)` is no longer the mislabelled one.** Since v1.3.2 it implements Buck's
+> (1996) three-parameter form verbatim, giving ≤ 0.04 % over 0–50 ℃ (it used to be
+> +3.51 % at 50 ℃ and +12.56 % at 100 ℃).
 
 ### How many formulas actually return a result at temperature extremes
 
@@ -92,15 +109,25 @@ hope that it is useful to other people doing meteorology.
 
 | Reference | What it is | Max deviation observed |
 |---|---|---|
-| ASHRAE adiabatic-saturation equation | the **definition** of thermodynamic wet-bulb temperature | **0.45 K** (@50 ℃ / 10 % RH; ≈0.05 K at room temperature) |
-| Stull (2011) empirical fit | fully independent published formula, no shared code | 0.91 K |
+| ASHRAE adiabatic-saturation equation | the **definition** of thermodynamic wet-bulb temperature | **0.42 K** (@50 ℃ / 5 % RH; ≈0.25 K over 0–30 ℃) |
+| Stull (2011) empirical fit | fully independent published formula, no shared code | 1.77 K (@ −8 ℃ / 10 % RH — that is **Stull's own** error) |
 | ASHRAE / Vaisala dew-point tables | published table values | 0.30 K (within assertion tolerance) |
 
 > This project solves the meteorological psychrometric equation
-> `e = e_sat(T_w) − A·p·(T − T_w)`, `A = 0.000667(1 + 0.00115·T_w)`.
+> `e = e_sat(T_w) − A·p·(T − T_w)` with
+> `A = 0.000660(1 + 0.00115·T_w)` over water and `0.000582(1 + 0.00115·T_f)` over ice,
+> taken verbatim from FAO *Frost Protection* Appendix 3, Eqs. (A3.15)/(A3.16).
 > Its difference from the ASHRAE definition is the error of that approximation itself:
-> a smooth, monotonic 0.01 → 0.45 K drift with rising temperature and drier air. If that
+> a smooth, monotonic 0.02 → 0.42 K drift with rising temperature and drier air. If that
 > difference ever becomes erratic or changes sign, the solver is broken and CI says so.
+>
+> **The Newton solver itself is exact**: it agrees with an independent `scipy.brentq` root
+> to 8×10⁻¹⁴ K and leaves an equation residual of 9×10⁻¹⁴ hPa. All of the error above comes
+> from the equation form, none from the algorithm.
+>
+> **The 1.77 K in the Stull row is not this project's error**: at that same grid point this
+> project is within 0.05 K of the ASHRAE definition. Stull (2011) itself drifts in the
+> cold/dry corner, which is exactly why that row is only a coarse sanity check.
 
 ---
 
@@ -108,8 +135,69 @@ hope that it is useful to other people doing meteorology.
 
 Download the latest release — that is all most users need.
 
-Stable releases: `v1.1.3`, `v1.2.2`, `v1.3.0`, `v1.3.1`.
+Stable releases: `v1.1.3`, `v1.2.2`, `v1.3.0`, `v1.3.1`, `v1.3.2`.
 Do **not** use `v1.0.0`, `v1.0.1` or `v1.2.0`: they contain serious bugs.
+
+### v1.3.2 — second numerical-fix release (full formula re-derivation)
+
+> **v1.3.2 does not produce the same numbers as v1.3.1.** One formula constant, one
+> equation coefficient, three derived-quantity physics errors and five over-wide
+> applicability ranges were fixed. **Use v1.3.2 or later.**
+>
+> Wet-bulb temperature, mode-1 dew point, enthalpy, speed of sound and LCL all change.
+> The **mode-2 dew point does not** (it only inverts `e_sat`, independently of the
+> psychrometric equation).
+
+- **Fixed** — `Gili (water)`: removed the `+0.00141966` term in the exponent, which has no
+  traceable source. v1.3.1 only changed the leading factor (980.66 → 1013.25) and left the
+  actual defect in place: with that term the formula returns **1016.57 hPa at its own
+  reference point 373.15 K**, where it must by construction return 1013.25 hPa (1 atm).
+  Root cause: the legacy code read `980.66·10^(0.00141966+…)`, but 980.665 hPa (1 technical
+  atmosphere) pairs with `lg(1013.25/980.665) = 0.0141966` — `0.00141966` is exactly that
+  value divided by 10. Reference temperature also corrected to 373.15 K per the one source
+  located. Full-range deviation **0.28 % → 0.14 %**.
+- **Fixed** — the **A coefficient of the psychrometric equation** went from `0.000667` back
+  to the value in the cited source (FAO *Frost Protection* Appendix 3), `0.000660`. This is
+  the continuation of the project's own bug B-02: the derivative term used `0.00066` while γ
+  used `0.000667`, and the "fix" at the time standardised both on the **wrong** one. The ice
+  coefficient `0.000582` from the same appendix (Eq. A3.16) is now used for ice formulas --
+  the appendix answers the question the README used to list as undecided. Max deviation vs
+  the ASHRAE definition **0.52 K → 0.42 K** (0.25 K over 0–30 ℃).
+- **Fixed** — `Arden (water)`: its coefficients are Buck's (1996) **three-parameter** form but
+  were squeezed into the two-parameter `magnus` family, dropping the `−T/234.5` correction
+  (+0.91 % at 25 ℃, +3.51 % at 50 ℃, **+12.56 %** at 100 ℃). A new `buck96` family now
+  implements it verbatim: ≤ 0.04 % over 0–50 ℃.
+- **Fixed** — **enthalpy** used the *vapour* specific heat where the *liquid* one is required.
+  `h = c_pa·T + w·(L_v(T) + c_w·T)` needs `c_w = 4.186 kJ/(kg·K)`, not 1.864. At 25 ℃ /
+  RH ≈ 54 %: 51.63 → **52.25 kJ/kg** (ASHRAE's standard form gives 52.27; the old value was
+  1.23 % low).
+- **Fixed** — the mixing basis for the **moist-air adiabatic index**. Specific heats are
+  per unit *mass*, so they must be weighted by **mass** fraction; the old code weighted them
+  by *mole* fraction. γ 1.397006 → **1.397846**, speed of sound 346.885 → **346.989 m/s**.
+- **Fixed** — **LCL** now uses Bolton's (1980) published Eq. (21), with `T` and `T_d` in
+  **kelvin**. The old code used a Celsius variant that also substituted `ln(RH)` for
+  `ln(T/T_d)` and was off by up to +2.6 K (+0.93 K at 25 ℃/15 ℃). Now 25 ℃/15 ℃ gives
+  **12.72 ℃**, within 0.03 K of the `125(T−T_d)` m rule of thumb.
+- **Fixed** — **five over-wide registered ranges** (the registered range is what the engine
+  uses to decide "not applicable", so declaring it too wide tells the user a formula works
+  where it does not):
+
+  | Formula | Was | Now | Deviation outside the old range |
+  |---|---|---|---|
+  | Buck (water) | 0 – 80 ℃ | 0 – 50 ℃ | +1.11 % at 80 ℃ |
+  | Arden (water) | 0 – 100 ℃ | 0 – 50 ℃ | +12.56 % at 100 ℃ |
+  | Wexler (ice) | −150 – 10 ℃ | −100 – 0 ℃ | +0.47 % at −150 ℃ |
+  | Marti (ice) | −150 – 0 ℃ | −103 – 0 ℃ | −9.93 % at −150 ℃ |
+  | Goff-Gratch (ice) | −100 – 10 ℃ | −100 – 0 ℃ | ice does not exist above 0 ℃ |
+
+  > The last row is a behaviour change: at, say, +5 ℃ the ice formulas now report
+  > **"not applicable"** instead of displaying a frost point next to the water results.
+  > At exactly 0 ℃ both phases are still available (the 14/14 row above is unchanged).
+- **Added** — a **full-domain sweep per formula** (`tests/test_esat_domain_sweep.py` +
+  `tests/reference_iapws.py`) against the IAPWS official equations, replacing "10 discrete
+  sample points".
+- **Added** — the README accuracy table is now **reconciled automatically**: if a number in
+  it is smaller than the measurement, CI turns red.
 
 ### v1.3.1 — numerical-fix release
 
@@ -118,10 +206,12 @@ Do **not** use `v1.0.0`, `v1.0.1` or `v1.2.0`: they contain serious bugs.
 
 - **Fixed** — `Gili`: the leading factor was 980.66 (1 technical atmosphere) instead of
   1013.25 hPa, which made the formula read a constant **3.0 % low** over its whole range.
-  Now within **0.28 %**.
+  Now within 0.28 %.
+  > ⚠️ **This only treated the symptom** — the real cause was the decimal-shifted constant
+  > term on the same line, removed in v1.3.2 (see above).
 - **Fixed** — `Goff-Gratch 1946`: the 4th coefficient was `1.3816e-5` instead of
   `1.3816e-7` (a factor of 100), making the cold end read −3.5 % at 0 ℃ and −1.7 % at 10 ℃.
-  Now within 0.09 % everywhere.
+  Now within 0.12 % everywhere.
 - **Fixed** — the analytic derivative of the `goff` family had a wrong second term, so the
   *slope* was wrong by 40 % (Goff2), 26 % (Goff) and 18 % (Goff ice). The root was
   unaffected, which is exactly why checking only the results never caught it.
@@ -139,7 +229,7 @@ Do **not** use `v1.0.0`, `v1.0.1` or `v1.2.0`: they contain serious bugs.
   `Could not find the Qt platform plugin "windows"`. Fixed by exporting the real path via
   `QT_PLUGIN_PATH`. Details in `main.py`.
 - **Added** — engine-level input validation; applicability determined by the temperatures
-  actually used; `tests/` with external-reference regression (254 assertions); GitHub
+  actually used; `tests/` with external-reference regression (254 assertions at v1.3.1; 299 now); GitHub
   Actions CI; `run_tests.ps1`.
 - **Removed** — **the "local gravity" input** (widget, the `g` key in `cfg.json`, and its
   read/write helpers). It never entered a single calculation since v1.2.0 (see the known
@@ -208,7 +298,7 @@ correctness verification against published reference values.
 
 ```bash
 python src/core.py                   # equivalence regression (stdlib only)
-python -m pytest -q                  # correctness vs WMO/ASHRAE references (254 assertions)
+python -m pytest -q                  # correctness vs IAPWS/ASHRAE references (299 assertions)
 python -m pyflakes main.py src/core.py   # undefined names / unused imports
 ```
 
@@ -340,51 +430,62 @@ the tolerance table in `tests/test_esat_reference.py` so CI keeps an eye on its 
 
 1. **The hot end is unusable.** At +150 ℃ and +200 ℃ none of the 14 formulas returns a
    result. The registered range reaches 200 ℃; that is a declaration, not a capability.
-2. **`Arden` is unusable when hot.** Its coefficients come from Buck's (1996) **three**-parameter
-   form `e_s = 6.1121·exp[(18.678 − T/234.5)·T/(257.14 + T)]`, but it is registered with the
-   **two**-parameter `magnus` family, which drops the `−T/234.5` correction: +1.0 % at 25 ℃,
-   +3.6 % at 50 ℃, +12.7 % at 100 ℃. Documented only; fixing it properly requires adding a
-   three-parameter family.
-3. **The wet-bulb equation is the psychrometric approximation.** It differs from the ASHRAE
-   adiabatic-saturation definition by 0.01–0.45 K (growing with temperature). A strict
-   thermodynamic wet-bulb temperature would require the adiabatic-saturation equation.
-4. **Below 0 ℃ the wet bulb is still computed over water.** A real ventilated psychrometer
-   forms an ice bulb; here the selected formula family is used unchanged, so results diverge
-   across 0 ℃ depending on the formula chosen.
-5. **The LCL uses a common Celsius variant of Bolton's formula** (`T_d − 56` in ℃ rather than
-   K). It agrees with the "LCL ≈ 125·(T − T_d) m" rule of thumb to within 1.2 K but differs
-   from the strict Bolton solution by about 1 K and has not been checked against an external
-   truth value.
-6. **Relative humidity must be greater than 0 %.** The accepted range is `(0, 100]`, so
+2. **The wet-bulb equation is the psychrometric approximation.** It differs from the ASHRAE
+   adiabatic-saturation definition by 0.02–0.42 K (growing with temperature and drier air;
+   about 0.25 K over 0–30 ℃). A strictly thermodynamic wet-bulb temperature would require
+   the adiabatic-saturation equation. This is the **largest error source** in the tool, and
+   the only one that is a *definition choice* rather than an implementation defect.
+3. **The A coefficient follows the selected phase.** Water families use FAO's `0.000660`,
+   ice families `0.000582` (Appendix 3, Eqs. A3.15/A3.16). But the wet bulb's own saturation
+   pressure still comes from the selected family's `e_sat`: picking `Goff (water)` at a dry
+   bulb of −5 ℃ computes a *supercooled-water* wet bulb, not an ice bulb. A real ventilated
+   psychrometer forms an ice bulb when it freezes, so results diverge across 0 ℃ depending
+   on the family chosen — **which family to use is the user's call**.
+4. **Relative humidity must be greater than 0 %.** The accepted range is `(0, 100]`, so
    `RH = 0` is rejected outright instead of returning a fake number. Physically, dry air is a
    legitimate input (no dew point, wet bulb = dry bulb), so a status value would be more
    generous — but the old code answered `RH = 0` with `−150 ℃` (the bisection floor), and
    refusing is safer than guessing. Use a tiny value such as 0.001 % if you need the dry limit,
    or use mode 0/1 instead.
-7. **Batch calculation does not checkpoint.** `result_*.xlsx` is written only after the whole
+5. **The psychrometric coefficient A is not the WMO one.** This project uses FAO
+   *Frost Protection* Appendix 3: `0.000660(1+0.00115·t_w)` over water and
+   `0.000582(1+0.00115·t_f)` over ice — **not** WMO-No. 8, which specifies the Assmann form
+   `A = 6.53e-4(1+0.000944·t_w)` over water and `5.75e-4` over ice. The theoretical value is
+   `A ≈ c_p/(εL)` ≈ 6.46–6.47×10⁻⁴. Measured effect of switching to the WMO water
+   coefficient: max deviation from the ASHRAE definition falls from **0.42 K to 0.29 K**
+   (0.25 → 0.16 K over 0–30 ℃). FAO is kept because that is what the code and docs cite;
+   switching standards is a researcher's call, and it is a one-line change to `A0_WATER`.
+6. **Equivalent potential temperature uses the simplified form** `θe = θ·exp(L_v·q/(c_p·T))`.
+   It differs from the strict Bolton (1980) Eq. (38) by about **−1.4 %** (−4.5 K at 25 ℃ /
+   54 % RH). These are *different definitions*, not one right and one wrong, so the panel
+   keeps the current one and states the difference.
+7. **The `L_v(T)` quartic fit** gives 2440.5 kJ/kg at 25 ℃ (IAPWS: 2441.8, −0.05 %) and is
+   within 0.18 % over its whole range. Its origin could not be verified, but the deviation
+   is far smaller than items 2 and 6.
+8. **Batch calculation does not checkpoint.** `result_*.xlsx` is written only after the whole
    table is processed.
-8. **The GUI is not covered in CI.** `main.py` needs PySide2, so CI only compiles it. Locally,
-   `tests/test_repo_hygiene.py` constructs the real windows on an offscreen Qt platform when a
-   suitable interpreter is available; interactions (unit dialog, batch writing) still need a
-   human. Those three GUI tests are **always skipped in CI** (PySide2 cannot be installed
-   there — see the workflow comment and B-23): "CI is green" proves the engine and repo
-   hygiene, not the interface. `run_tests.ps1` prints exactly which tests were skipped, and
-   you can point `WETBULB_GUI_PYTHON` at the 3.10 interpreter to run them locally.
-9. **The psychrometric coefficient A is not the WMO one.** This project uses
-   `0.000667(1+0.00115·t_w)`, which comes from FAO *Frost Protection* Annex 3 (citing
-   Fritschen & Gay, 1979) — **not** from WMO-No. 8, which specifies the Assmann form
-   `A = 6.53e-4(1+0.000944·t_w)` over water and `5.75e-4` over ice. Measured effect of
-   switching: deviation from the ASHRAE definition drops from **0.452 K to 0.265 K**.
-   Not changed yet, because WMO gives *two different* coefficients for water and ice and this
-   tool does not currently distinguish the phase — a phase-judgement call.
-10. **`Gili` carries an unexplained term.** Its exponent includes a `+0.00141966` that appears in
-    no source I could find (the Chinese engineering-literature version of the same formula has
-    `2.0057173 = lg 101.325` instead, with P in kPa — which does confirm the v1.3.1 prefactor
-    fix). Removing it would cut the deviation from the reference table from **0.276 % to
-    0.147 %**. Not changed yet.
+9. **The GUI is not covered in CI.** `main.py` needs PySide2, so CI only compiles it. Locally,
+   `tests/test_repo_hygiene.py` constructs the real windows on an offscreen Qt platform and
+   runs both calculation modes end to end when a suitable interpreter is available;
+   interactions (unit dialog, batch writing) still need a human. Those three GUI tests are
+   **always skipped in CI** (PySide2 cannot be installed there — see the workflow comment and
+   B-23): "CI is green" proves the engine and repo hygiene, not the interface.
+   `run_tests.ps1` prints exactly which tests were skipped, and you can point
+   `WETBULB_GUI_PYTHON` at the 3.10 interpreter to run them locally.
+10. **Two coarse ice formulas.** `Buck (ice)` is 0.83 % off at its registered endpoint of
+    −80 ℃ and `Marti (ice)` 2.01 % at −82 ℃ (vs IAPWS-2011). That is each formula's own
+    accuracy and their ranges are already narrowed to their sources' claims, but near those
+    temperatures **do not compare them side by side with the reference-grade formulas**.
+11. **`Gili`'s original source is still unverified.** Only a Chinese HVAC/cooling-tower
+    engineering paper with the same family of formula could be located
+    (`lg P = 2.0057173 − 3.142305(10³/T − 10³/373.15) + 8.2·lg(373.15/T) − 0.0024804(100 − t)`,
+    P in kPa). v1.3.2 implements exactly that form (reference temperature 373.15 K, no
+    constant term in the exponent) and the full-range deviation is 0.14 %, but the
+    **attribution itself remains unverified** — use it cautiously above 20 ℃.
 
 > Full citations for all 14 formulas, per-entry verification status, and the quantified
-> comparison for items 9–10 are in [`docs/精度与参考文献.md`](docs/精度与参考文献.md) (Chinese).
+> comparisons for items 2, 5, 6 and 11 are in
+> [`docs/精度与参考文献.md`](docs/精度与参考文献.md) (Chinese).
 >
 > ⚠️ Verification corrected three attributions: this project's two `Wexler` coefficient sets
 > are exactly **Hyland & Wexler (1983)**, not Wexler (1976); `Goff` is **1957**, not the

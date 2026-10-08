@@ -425,6 +425,20 @@ def test_gui_full_calculation_flow():
         rows2 = w.list_model.stringList()
         print("MODE2_ROWS", len(rows2))
         print("MODE2_GOFF", [r for r in rows2 if r.startswith("Goff-水面")])
+
+        # 模式 0（边界值）：干球 0 ℃ / 露点 −5 ℃
+        # 【为什么单独列一条】v1.3.2 的 check_input 改成"返回换算到标准单位后的数值"，
+        # 若调用方仍写成 `if not self.check_input(...)`，**0 ℃ 会被 `not 0.0` 判成失败** ——
+        # 点"计算"毫无反应、连错误条都没有。0 ℃ 是最常见的输入之一，必须钉住。
+        w.ComboBox.setCurrentIndex(0)
+        app.processEvents()
+        w.LineEdit_3.setText("0"); w.LineEdit.setText("-5"); w.LineEdit_2.setText("1013.25")
+        app.processEvents()
+        w.validate_and_calculate()
+        app.processEvents()
+        rows_zero = w.list_model.stringList()
+        print("MODE0_ZERO_ROWS", len(rows_zero))
+        print("MODE0_ZERO_GOFF", [r for r in rows_zero if r.startswith("Goff-水面")])
     ''')
     proc, records = _run_probe(exe, code)
     assert records, _probe_failed(proc, records)
@@ -433,9 +447,22 @@ def test_gui_full_calculation_flow():
     # 表头 1 行 + 14 条公式；注意列表末尾还有一行空串，所以是 16
     assert 'MODE0_ROWS 16' in out, f"模式0 没有把结果填进列表：\n{out}"
     assert 'MODE2_ROWS 16' in out, f"模式2 没有把结果填进列表：\n{out}"
-    # 数值锚点：与 docs/项目编年史.md 记录的实测值一致（干 25 / 露 15 → Goff-水面 18.6186 ℃）
-    assert "MODE0_GOFF ['Goff-水面:  18.6186℃  " in out, (
-        f"模式0 的 Goff-水面 结果与编年史记录的 18.6186 不一致：\n{out}")
+    assert 'MODE0_ZERO_ROWS 16' in out, (
+        f"干球 0 ℃（合法输入）没有出结果：多半是 check_input 的返回值被当布尔量用了"
+        f"（`not 0.0` 为真 → 静默返回）：\n{out}")
+
+    # 数值锚点：期望值由 core 现算，不写死常数。
+    # 【为什么改】原实现写死 "18.6186" 并声称"与编年史记录的实测值一致"——
+    # 于是每次修数值都得同步改这条测试，而它是 GUI 回归、本该只关心
+    # "界面有没有把结果渲染出来"。现在把"算得对不对"交给 core 现算的值，
+    # 这条测试就只剩它真正的职责：界面链路通不通、显示值与 core 是否一致。
+    want0 = {r['method']: r['result1'] for r in core.calculate_wetbulb(15, 25, 15)}['Goff-水面']
+    want2 = {r['method']: r for r in core.calculate_both(20, 25, 60)}['Goff-水面']
+    assert f"{want0:.4f}℃" in out, (
+        f"模式0 界面显示的 Goff-水面 结果与 core 现算的 {want0:.4f}℃ 不一致：\n{out}")
+    assert f"{want2['result1']:.4f}℃" in out and f"{want2['result2']:.4f}℃" in out, (
+        f"模式2 界面显示的 Goff-水面 结果与 core 现算的 "
+        f"{want2['result1']:.4f}/{want2['result2']:.4f}℃ 不一致：\n{out}")
 
 
 def test_main_does_not_rebind_core_globals():

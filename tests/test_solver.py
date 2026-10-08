@@ -105,16 +105,153 @@ def test_wetbulb_matches_ashrae_adiabatic_saturation(T, rh):
 
 
 def test_wetbulb_satisfies_psychrometric_equation():
-    """结果必须真的满足湿球方程 e_sat(Tw) − γP(T−Tw) = e，而不只是"看起来合理"。"""
+    """结果必须真的满足湿球方程 e_sat(Tw) − A·P(T−Tw) = e，而不只是"看起来合理"。
+
+    方程里的 A 从 `core.psychrometer_A` 取，测试里**不另抄一份常数** ——
+    抄一份就等于把 B-02 那类"两处常数不一致"重新请回来。
+    """
     T, Td, P = 25.0, 15.0, 1013.25
     res = _by_method(core.calculate_wetbulb(15, T, Td, P))
     for name in ('Goff-水面', 'Wexler-水面', 'Magnus-水面'):
         Tw = res[name]['result1']
         assert isinstance(Tw, float), f"{name}: {Tw!r}"
         e = core.calculate_esat(Td, name)
-        gamma = 0.000667 * (1 + 0.00115 * Tw) * P
-        residual = core.calculate_esat(Tw, name) - gamma * (T - Tw) - e
+        a0 = core.get_formula(name)['a0']
+        residual = (core.calculate_esat(Tw, name)
+                    - core.psychrometer_A(Tw, a0) * P * (T - Tw) - e)
         assert abs(residual) < 1e-3, f"{name}: 湿球方程残差 {residual:.3e} hPa"
+
+
+def test_psychrometer_a_follows_the_cited_source():
+    """湿度计方程 A 系数必须等于所引出处（FAO《Frost Protection》附录 3）的值。
+
+    附录 3 式 A3.15（水面）与式 A3.16（冰面/霜球）分别给出
+        A = 0.000660·(1 + 0.00115·t_w)  和  A = 0.000582·(1 + 0.00115·t_f)。
+    历史缺陷 B-02：牛顿求导项用的是 0.00066、γ 用的是 0.000667，
+    当年的"修复"把两边统一到了错的那一个（0.000667）。这里把两边一起钉住：
+    既钉基准值，也钉"每条公式取的是自己相态的那一个"。
+    """
+    assert core.A0_WATER == 0.000660
+    assert core.A0_ICE == 0.000582
+    assert core.A_T_COEF == 0.00115
+    for f in core.iter_formulas():
+        want = core.A0_ICE if '冰面' in f['name'] else core.A0_WATER
+        assert f['a0'] == want, (
+            f"{f['name']} 的 A 基准值 {f['a0']!r} 与相态不符（应为 {want!r}）")
+        assert core.psychrometer_A(20.0, f['a0']) == pytest.approx(
+            want * (1 + 0.00115 * 20.0), rel=1e-15)
+
+
+def test_wetbulb_residual_is_zero_for_every_applicable_formula():
+    """每条真正出数的公式（含冰面公式）都必须把自己的湿球方程解到残差 ~0。"""
+    checked = 0
+    for T, Td in [(25, 15), (5, 0), (-5, -10), (-20, -25), (40, 30)]:
+        for r in core.calculate_wetbulb(Td, T, Td, 1013.25):
+            Tw = r['result1']
+            if not isinstance(Tw, float):
+                continue
+            name = r['method']
+            e = core.calculate_esat(Td, name)
+            a0 = core.get_formula(name)['a0']
+            residual = (core.calculate_esat(Tw, name)
+                        - core.psychrometer_A(Tw, a0) * 1013.25 * (T - Tw) - e)
+            assert abs(residual) < 1e-3, f"{name} @ T={T}, Td={Td}: 残差 {residual:.3e}"
+            checked += 1
+    assert checked > 20, f"只检查到 {checked} 条公式结果，取样不足"
+
+
+# ---------------------------------------------- 求解器：精度与初值无关性（v1.3.2）
+
+def test_solver_result_does_not_depend_on_initial_guess():
+    """**结果的条数与数值都不得取决于迭代初值。**
+
+    这是 v1.3.1 只做了一半的那件事：适用域判定已改成按温度判定，但**求解器**
+    还挂在初值上——旧版裸牛顿从发散初值出发就报「未收敛」，于是同一个输入，
+    下拉框选 "Tw=Td" 还是 "Tw=T-n" 会改变你在列表里看到几行。
+    实测（T=45 ℃/RH=60%）旧版：初值 0~40 → 8 条，初值 100 → 4 条，初值 199 → 0 条。
+
+    现在求解器是「带括号的牛顿法」：f 在该区间严格单调，根唯一，
+    括号法保证收敛。初值只影响迭代路径（收敛图），不影响结果。
+    """
+    guesses = (-149, -100, -50, 0, 5, 10, 15, 25, 40, 60, 100, 150, 199)
+    for T, rh in [(-150, 60), (-100, 60), (-80, 60), (-20, 50), (0, 60), (25, 60),
+                  (45, 60), (150, 50), (200, 50)]:
+        ref = {r['method']: (r['result1'], r['result2'])
+               for r in core.calculate_both(guesses[0], T, rh)}
+        for g in guesses[1:]:
+            got = {r['method']: (r['result1'], r['result2'])
+                   for r in core.calculate_both(g, T, rh)}
+            # 「哪几条公式出数」必须逐条一致 —— 这才是旧版真正会变的东西
+            assert {k for k, v in got.items() if isinstance(v[0], float)} == \
+                   {k for k, v in ref.items() if isinstance(v[0], float)}, \
+                   f"T={T} ℃ / RH={rh}%：初值 {g} 改变了「哪些公式出数」"
+            # 数值只允许差在浮点末位（迭代路径不同，最后一位可以不同）
+            for k, v in ref.items():
+                if not isinstance(v[0], float):
+                    assert got[k] == v, f"{T}/{rh}% 初值{g} {k}: {got[k]!r} != {v!r}"
+                    continue
+                assert abs(got[k][0] - v[0]) < 1e-9, f"{T}/{rh}% 初值{g} {k} 露点差 {got[k][0]-v[0]:.3e}"
+                assert abs(got[k][1] - v[1]) < 1e-9, f"{T}/{rh}% 初值{g} {k} 湿球差 {got[k][1]-v[1]:.3e}"
+
+
+def test_solver_matches_independent_root_finder():
+    """`_solve_wetbulb` 本身必须精确到机器精度（误差全部来自方程形式，不是算法）。
+
+    用 scipy 不可得时的场景（CI 只装 pytest），这里用一个独立的**二分+牛顿**
+    实现做对照——它只依赖 core 的 e_sat，与 core 的求解器零共享代码。
+    """
+    f = core.get_formula('Goff-水面')
+    a0 = f['a0']
+    P = 1013.25
+    worst = 0.0
+    checked = 0
+    for T in (-10, 0, 10, 25, 40, 50):
+        for rh in (5, 20, 50, 80, 99):
+            e = core.calculate_esat(T, 'Goff-水面') * rh / 100
+
+            def residual(tw):
+                return (core.calculate_esat(tw, 'Goff-水面')
+                        - core.psychrometer_A(tw, a0) * P * (T - tw) - e)
+
+            lo, hi = -149.999, T
+            assert residual(lo) < 0 <= residual(hi)
+            for _ in range(200):                      # 纯二分，独立于 core 的牛顿
+                mid = (lo + hi) / 2
+                if residual(mid) > 0:
+                    hi = mid
+                else:
+                    lo = mid
+            ref = (lo + hi) / 2
+            for guess in (-149, 0, 15, 60):
+                got, status = core._solve_wetbulb(T, e, P, guess, f, 50, 1e-10)
+                assert status == 'ok', f"T={T}, RH={rh}, 初值={guess}: {status}"
+                worst = max(worst, abs(got - ref))
+                checked += 1
+    assert checked == 120, f"只检查到 {checked} 次"
+    assert worst < 1e-7, f"求解器与独立二分求根最大差 {worst:.3e} K"
+
+
+def test_infeasible_state_is_rejected_not_answered():
+    """水汽分压不能达到总压。高温 + 常压下 RH 是"不可能达到"的数值。
+
+    150 ℃ 时 e_sat ≈ 4760 hPa，而 P = 1013.25 hPa：RH=50% 要求 e = 2380 hPa > P，
+    水早就沸腾了，不存在这种混合气。旧版要么靠求解器意外发散（恰好也报错），
+    要么给出一个数——前者是运气，后者是错。现在明确拒绝。
+    """
+    for T, rh in [(150, 50), (200, 50), (120, 90), (110, 100)]:
+        for r in core.calculate_both(10, T, rh, P=1013.25):
+            if not isinstance(r['result1'], float):
+                continue
+            raise AssertionError(
+                f"T={T} ℃ / RH={rh}% 下 {r['method']} 给出了 {r['result1']!r}，"
+                f"而该状态下 e ≥ P，物理上不成立")
+    # 同一组输入在足够高的压强下必须能算（证明拒绝的是状态而不是温度）
+    ok = [r for r in core.calculate_both(10, 100, 100, P=1200.0)
+          if isinstance(r.get('result2'), float)]
+    assert ok, "把压强提到 1200 hPa 后，100 ℃/RH 100% 应当有公式能算出来"
+    # 正常的常温常压状态一根汗毛都不该受影响
+    normal = {r['method']: r for r in core.calculate_both(15, 25, 60)}
+    assert isinstance(normal['Goff-水面']['result2'], float)
 
 
 def test_wetbulb_is_between_dewpoint_and_dry_bulb():

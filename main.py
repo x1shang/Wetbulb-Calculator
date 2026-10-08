@@ -31,6 +31,23 @@ import time
 import webbrowser
 
 # ---------------------------------------------------------------------------
+# 单位换算的**唯一定义**（v1.3.2 起）
+#
+# 【为什么单独立出来】旧版把 mmHg / cmHg 的换算系数写死成 1.33322 / 13.3322，
+# 而 README 与 core.py 的注释都用"1 mmHg = 133.322387415 Pa 是**定义值**"
+# 来论证删除"本地重力加速度"是合理的——两处说的不是同一个数（相对差 2.9e-6）。
+# 更实际的问题是：单位对话框向用户公布的区间（375~825 mmHg）与 check_input
+# 实际强制的区间对不上，`375 mmHg × 1.33322 = 499.9575 hPa < 500` 被拒，
+# 而界面刚刚告诉用户 375 是下限。
+# 现在系数只在这里写一次，区间由它反推，"公布的"与"强制的"不可能再打架。
+MMHG_HPA = 133.322387415 / 100.0     # 1 mmHg = 133.322387415 Pa（定义值）= 1.33322387415 hPa
+CMHG_HPA = MMHG_HPA * 10.0
+# 界面压强域（hPa）：比 core.check_pressure 的 (0,1200] 收得紧，只服务交互路径
+UI_P_MIN_HPA, UI_P_MAX_HPA = 500.0, 1100.0
+# 界面温度域（℃）：与 core.T_MIN / T_MAX 一致
+UI_T_MIN_C, UI_T_MAX_C = -150.0, 200.0
+
+# ---------------------------------------------------------------------------
 # Windows 下"中文路径"会让 PySide2 找不到 Qt 平台插件（v1.3.1 修）
 #
 # 现象：项目放在含中文的目录（例如本仓库所在的 …\projpy\晴雨表\）时，程序启动即崩，
@@ -419,9 +436,9 @@ class main_window(QWidget, Ui_wetbulb):
         elif self.pressure_unit == 'Pa':
             P /= 100
         elif self.pressure_unit == 'mmHg':
-            P *= 1.33322
+            P *= MMHG_HPA
         elif self.pressure_unit == 'cmHg':
-            P *= 13.3322
+            P *= CMHG_HPA
         elif self.pressure_unit == 'bar':
             P *= 1000
         return P
@@ -430,9 +447,9 @@ class main_window(QWidget, Ui_wetbulb):
         if self.pressure_unit == 'Pa':
             P *= 100
         elif self.pressure_unit == 'mmHg':
-            P /= 1.33322
+            P /= MMHG_HPA
         elif self.pressure_unit == 'cmHg':
-            P /= 13.3322
+            P /= CMHG_HPA
         elif self.pressure_unit == 'bar':
             P /= 1000
         else:
@@ -458,49 +475,81 @@ class main_window(QWidget, Ui_wetbulb):
         return temperature
 
     def get_initial_guess(self, T, T_other):
-        if self.ComboBox_2.currentIndex() == 0:  # Tw=Td
-            return T_other
-        elif self.ComboBox_2.currentIndex() == 1:  # Tw=T-n
-            ini = T - 2 if T < 0 else T - 5
-            return ini
-            
+        """湿球迭代的初值策略。注意：**结果与初值无关**（core 的求解器
+        用带括号的牛顿法，见 core._solve_wetbulb）；这里只影响收敛图的形状。"""
+        if self.ComboBox_2.currentIndex() == 1:  # Tw=T-n
+            return T - 2 if T < 0 else T - 5
+        # 0 = Tw=Td；其它（不可达的）取值一律退回 Tw=Td，
+        # 而不是像旧版那样掉出函数返回 None（那会让 core 报 '错误: …' 并当成结果打印）
+        return T_other
+
     def check_input(self, line_edit, field_name):
+        """解析并校验一个输入框，返回**换算到标准单位（℃ / hPa）后的数值**；
+        失败返回 None 并弹错误条。
+
+        【v1.3.2 修 · 这里原本有两个真缺陷】
+        旧版只返回 True/False，而且它拿"**过滤掉非数字字符之后的串**"去做校验，
+        调用方随后却对**原文本**再 float() 一次 —— 校验的和用的根本不是同一个数：
+
+          · `60%`：过滤成 "60" 通过校验，紧接着 `float("60%")` 抛 ValueError，
+            用户看到 `could not convert string to float: '60%'`。
+            而相对湿度框的占位符恰恰写着 "0~100%" —— 是界面自己在引诱用户加 %。
+          · `1e3`：过滤成 "13"，于是按 13 hPa 判"超出范围"并清空输入框，
+            可 1e3 hPa 本来完全合法。反过来 `3e2` 按 32 hPa 放行、
+            计算时却按 300 hPa 算 —— 校验拦下的和实际计算用的可以毫不相干。
+
+        现在解析只发生一次：`float(原文本)`，随后按字段换算并检查区间。
+        返回数值而不是布尔量，是让"校验过的那一个数"和"拿去算的那一个数"
+        在类型上就不可能分家。
+        """
         text = line_edit.text().strip()
         if not text:
             self.createErrorInfoBar(f"{field_name}不能为空！")
             line_edit.clear()
-            return False
+            return None
         try:
-            cleaned_text = ''.join(filter(lambda x: x.isdigit() or x in ('.', '-'), text))
-            value = float(cleaned_text)
-
-            if "温度" in field_name:
-                value_C = self.changetemp(value)
-                if value_C < -150 or value_C > 200:
-                    min_ui = self.tempchange(-150)
-                    max_ui = self.tempchange(200)
-                    self.createErrorInfoBar(
-                        f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.temperature_unit} 范围内")
-                    line_edit.clear()
-                    return False
-            elif "压强" in field_name:
-                value_hPa = self.changepre(value)
-                if value_hPa < 500 or value_hPa > 1100:
-                    min_ui = self.prechange(500)
-                    max_ui = self.prechange(1100)
-                    self.createErrorInfoBar(f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
-                    line_edit.clear()
-                    return False
-            elif "相对湿度" in field_name:
-                # 用于确保是有效数字
-                pass
-
-            return True
+            value = float(text)
         except ValueError:
-            self.createErrorInfoBar(f"{field_name}必须是有效数字！")
+            self.createErrorInfoBar(f"{field_name}必须是有效数字（收到「{text}」）")
             line_edit.clear()
-            return False
-            
+            return None
+        if not math.isfinite(value):
+            self.createErrorInfoBar(f"{field_name}必须是有限数值（收不到 NaN / 无穷大）")
+            line_edit.clear()
+            return None
+
+        if "温度" in field_name:
+            value_C = self.changetemp(value)
+            if not (UI_T_MIN_C <= value_C <= UI_T_MAX_C):
+                min_ui = self.tempchange(UI_T_MIN_C)
+                max_ui = self.tempchange(UI_T_MAX_C)
+                self.createErrorInfoBar(
+                    f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.temperature_unit} 范围内")
+                line_edit.clear()
+                return None
+            return value_C
+
+        if "压强" in field_name:
+            value_hPa = self.changepre(value)
+            if not (UI_P_MIN_HPA <= value_hPa <= UI_P_MAX_HPA):
+                min_ui = self.prechange(UI_P_MIN_HPA)
+                max_ui = self.prechange(UI_P_MAX_HPA)
+                self.createErrorInfoBar(
+                    f"{field_name}需在 [{min_ui:.2f}, {max_ui:.2f}]{self.pressure_unit} 范围内")
+                line_edit.clear()
+                return None
+            return value_hPa
+
+        if "相对湿度" in field_name:
+            # 与 core.check_relative_humidity 一致：下界是**开区间**，RH=0 时 e=0、露点无定义
+            if not (0.0 < value <= 100.0):
+                self.createErrorInfoBar("相对湿度必须在 (0, 100] % 之间！")
+                line_edit.clear()
+                return None
+            return value
+
+        return value
+
     def _run_calc(self, fn, *args, **kwargs):
         """调用 core.py 的计算函数，把结果/迭代通过回调写回 CalculatorMemory。"""
         calc = CalculatorMemory()
@@ -510,33 +559,31 @@ class main_window(QWidget, Ui_wetbulb):
 
     def validate_and_calculate(self):
         try:
-            if not self.check_input(self.LineEdit_3, "干球温度"):
+            # check_input 返回**换算到标准单位后的数值**（℃ / hPa），失败返回 None。
+            # 【v1.3.2 修 · 代理复核发现】不能写成 `if not self.check_input(...)`：
+            # 干球温度 0 ℃（或 32 ℉ / 273.15 K）是合法且常见的输入，而 `not 0.0` 为真 ——
+            # 于是点"计算"什么都不发生、连错误条都没有。这里直接用返回值，
+            # 顺带消灭"校验的是过滤后的串、算的是原文本"那种分家。
+            T = self.check_input(self.LineEdit_3, "干球温度")
+            if T is None:
                 return
-            T_input = float(self.LineEdit_3.text())
-            T = self.changetemp(T_input)
             
             # 获取输入模式
             mode = self.ComboBox.currentIndex()
             target_label = self.label_2.text().replace(' ', '').rstrip("：")
 
-            if not self.check_input(self.LineEdit, target_label):
+            T_other_input = self.check_input(self.LineEdit, target_label)
+            if T_other_input is None:
                 return
-            T_other_input = float(self.LineEdit.text())
 
-            if mode == 2:  # 已知相对湿度
-                # 与 core.check_relative_humidity 一致：RH=0 时 e=0，露点无定义，故下界为开区间
-                if T_other_input <= 0 or T_other_input > 100:
-                    self.createErrorInfoBar("相对湿度必须在 (0, 100] % 之间！")
-                    self.LineEdit.clear()
-                    return
-                rh = T_other_input  # 这里是百分比
-            else:
-                T_other = self.changetemp(T_other_input)
+            if mode == 2:  # 已知相对湿度：该框的值就是百分数（check_input 已按 (0,100] 校验）
+                rh = T_other_input
+            else:         # 温度框：check_input 已换算成 ℃
+                T_other = T_other_input
 
-            if not self.check_input(self.LineEdit_2, "大气压强"):
+            P = self.check_input(self.LineEdit_2, "大气压强")
+            if P is None:
                 return
-            P_input = float(self.LineEdit_2.text())
-            P = self.changepre(P_input)
 
             if mode <= 1 and T_other >= T:
                 raise ValueError(f"{target_label}不能高于干球温度！")

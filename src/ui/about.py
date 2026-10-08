@@ -61,6 +61,9 @@ _REFERENCES_HTML = """
       —— <b>本站两组 Wexler 系数逐项等于本文</b>，不是 Wexler (1976)</li>
   <li>Buck, A. L. (1981). <i>New equations for computing vapor pressure and enhancement
       factor.</i> J. Appl. Meteor., <b>20</b>(12), 1527–1532.　（Buck 水面 / 冰面）</li>
+  <li>Buck, A. L. (1996). <i>Buck Research CR-1A User's Manual</i>, Appendix 1 ——
+      三参数水面式 <i>e</i>=6.1121·exp[(18.678 − t/234.5)·t/(257.14+t)]，
+      本站 <b>Arden-水面</b> 用的是它（v1.3.2 起按原式实现）</li>
   <li>Marti, J., &amp; Mauersberger, K. (1993). <i>A survey and new measurements of ice
       vapor pressure at temperatures between 170 and 250 K.</i> Geophys. Res. Lett.,
       <b>20</b>(5), 363–366.　（Marti 冰面）</li>
@@ -77,22 +80,40 @@ _REFERENCES_HTML = """
 <h4>湿球方程的两个系数</h4>
 <p>本站解 <i>e</i> = <i>e<sub>w</sub></i> − A·p·(t − t<sub>w</sub>)
 （方程本身见 WMO-No. 8, 4.3.1.1 式 (4.1)），A 取
-<b>0.000667(1+0.00115·t<sub>w</sub>)</b>——这个形式出自
-<b>FAO《Frost Protection》附录 3 式 (A3.10)</b>（转引 Fritschen &amp; Gay, 1979），
-<b>不是 WMO-No. 8 的系数</b>。WMO 给的是 Assmann 式
-A = 6.53×10⁻⁴(1+0.000944·t<sub>w</sub>)（水面，Annex 4.B.8）与 5.75×10⁻⁴（冰面，4.B.9）。
-理论值 A ≈ c<sub>p</sub>/(εL) ≈ 6.46×10⁻⁴（Simões-Moreira, 1999, Meas. Sci. Technol. 10(4)）。
-换成 WMO 系数后与 ASHRAE 定义式的偏差可由 0.452 K 降到 0.265 K，但**尚未修改**——
-水面/冰面用哪个 A 属于相态判断，见 docs/ 下的说明。</p>
+<b>0.000660(1+0.00115·t<sub>w</sub>)</b>（水面）与
+<b>0.000582(1+0.00115·t<sub>f</sub>)</b>（冰面/霜球），逐字取自
+<b>FAO《Frost Protection》附录 3 式 (A3.15) / (A3.16)</b>
+（转引 Fritschen &amp; Gay, 1979），<b>不是 WMO-No. 8 的系数</b>。
+WMO 给的是 Assmann 式 A = 6.53×10⁻⁴(1+0.000944·t<sub>w</sub>)（水面，Annex 4.B.8）
+与 5.75×10⁻⁴（冰面，4.B.9）。理论值 A ≈ c<sub>p</sub>/(εL) ≈ 6.46×10⁻⁴
+（Simões-Moreira, 1999, Meas. Sci. Technol. 10(4)）。
+v1.3.2 以前水面用的是 <b>0.000667</b>——那是历史上的笔误（见 Bug 档案 B-02），
+改回 FAO 原文的 0.000660 后与 ASHRAE 绝热饱和定义式的最大偏差由 0.452 K 降到 0.424 K，
+常温段（0~30 ℃）由 0.29 K 降到 0.25 K。</p>
+
+<h4>v1.3.2 修正的公式问题</h4>
+<ul>
+  <li><b>Gili-水面</b>：删掉指数里查不到出处的 <b>+0.00141966</b>。它在式子的参考点
+      373.15 K 上给出 1016.57 hPa 而不是按定义应有的 1013.25 hPa，自相矛盾；
+      legacy 里的 980.66 配的常数应是 lg(1013.25/980.665) = 0.0141966，
+      0.00141966 正是它的 1/10。</li>
+  <li><b>Arden-水面</b>：系数是 Buck (1996) 的<b>三参数</b>式，此前被塞进两参数族、
+      丢掉 −T/234.5 修正项，100 ℃ 处偏 +12.56%。已新增 buck96 三参数族按原式实现，
+      1~50 ℃ 内偏差 ≤0.05%。</li>
+  <li><b>注册适用域</b>：Buck-水面 80→50 ℃、Arden-水面 100→50 ℃、
+      Wexler-冰面 −150→−100 ℃、Marti-冰面 −150→−103 ℃、
+      Goff-冰面/Wexler-冰面 上界 +10→0 ℃（0 ℃ 以上不存在冰面）。</li>
+  <li><b>焓值</b>：潜热项要用<b>液态水</b>比热 4.186 kJ/(kg·K)，此前误用水汽比热 1.864。</li>
+  <li><b>抬升凝结高度</b>：改回 Bolton (1980) 原式（T、T_d 用开尔文），
+      25 ℃/Td 15 ℃ 时 13.66 ℃ → 12.72 ℃，与 125(T−T_d) 米经验规则一致。</li>
+</ul>
 
 <h4>未能核实到原文的</h4>
 <p><b>Gili-水面</b>：气象学文献中查无"吉利公式"这一名称。目前只在中文暖通/冷却塔工程文献里
 找到同族公式，其形式为 lg <i>P</i> = 2.0057173 − 3.142305(10³/T − 10³/373.15) +
 8.2·lg(373.15/T) − 0.0024804(100 − t)，<b>P 单位 kPa</b>；而
-2.0057173 = lg 101.325，即参考值 101.325 kPa = <b>1013.25 hPa</b>。
-这证实了 v1.3.1 把前因子由 980.66（1 工程大气压）改为 1013.25 是对的。
-但本站指数里另有一个 <b>+0.00141966</b> 项查不到出处（中文版本没有），
-去掉它偏差可由 0.276% 降到 0.147%——尚未修改。</p>
+2.0057173 = lg 101.325，即参考值 101.325 kPa = <b>1013.25 hPa</b>，<b>指数里没有常数项</b>。
+v1.3.2 已按这个形式实现（前因子 1013.25 + 参考温度 373.15 K + 无常数项）。</p>
 <p>另有若干条目只找到汇编转引、未取得原文（Hyland &amp; Wexler 的页码、Buck 1996 手册、
 Tetens 1930、Smithsonian 表页），逐条列在
 <a href="https://github.com/x1shang/Wetbulb-Calculator/tree/master/docs">docs/</a>
@@ -187,7 +208,8 @@ class Ui_Dialog(object):
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.0)"))  # v1.2.2 旧版本号注释保留
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.2.2)"))  # v1.3.0 旧版本号注释保留
         # self.label.setText(_translate("Dialog", "湿球计算器（version1.3.0)"))  # v1.3.1 旧版本号注释保留
-        self.label.setText(_translate("Dialog", "湿球计算器（version1.3.1)"))
+        # self.label.setText(_translate("Dialog", "湿球计算器（version1.3.1)"))  # v1.3.2 旧版本号注释保留
+        self.label.setText(_translate("Dialog", "湿球计算器（version1.3.2)"))
         self.label_2.setText(_translate("Dialog", "RDFZ降水相态研究性学习小组"))
         self.label_9.setText(_translate("Dialog", "朱嘉赫 王一博 刘思毅 制作"))
         self.label_3.setText(_translate("Dialog", "参考文献（依据值出处）："))
