@@ -18,7 +18,9 @@ import core
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 仓库结构（v1.3.1 起）。改结构就要改这张表——它是"我们声称的布局"的唯一出处。
+# 仓库结构（v1.3.3 起）。改结构就要改这张表——它是"我们声称的布局"的唯一出处。
+# 构建与发版资产（spec、requirements-build、scripts/、两个 workflow）同样列在这里：
+# 它们各自有专项断言，但"文件还在不在"只有这张表能守住。
 EXPECTED_LAYOUT = [
     'main.py',
     'src/core.py',
@@ -36,15 +38,23 @@ EXPECTED_LAYOUT = [
     'docs/精度与参考文献.md',
     'README.md',
     'README.en.md',
+    'RELEASE_NOTES.md',
+    'THIRD_PARTY_NOTICES.md',
     'LICENSE',
     'requirements.txt',
     'requirements-dev.txt',
+    'requirements-build.txt',
     'run_tests.ps1',
     'build.ps1',
+    'WetBulbCalculator.spec',
     'conftest.py',
+    'scripts/version_info.py',
+    'scripts/collect_licenses.py',
+    'scripts/verify_cli.py',
     '.gitignore',
     '.gitattributes',
     '.github/workflows/tests.yml',
+    '.github/workflows/release.yml',
 ]
 
 # 整理前散落在仓库根目录、现在必须已经归位的文件
