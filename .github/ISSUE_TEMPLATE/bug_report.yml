@@ -1,0 +1,98 @@
+name: 问题反馈 / 结果不对
+description: 报一个 bug、数值异常或使用问题。填得越具体，定位越快。
+title: "[反馈] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢反馈！如果你在做研究或工程算例，**尽量给出可复现的输入**——
+        能复现的算例我会直接加进 `tests/` 当回归用例。
+
+        提交前可以先看一眼 [`docs/精度与参考文献.md`](../blob/master/docs/精度与参考文献.md)：
+        里面有 14 条公式在各自注册区间上的实测偏差表、五方独立参照、以及明写的已知局限
+        （例如某些公式在极端温度下不适用、RH=0 被拒绝等，可能正是你遇到的情况）。
+
+  - type: textarea
+    id: scene
+    attributes:
+      label: 使用场景
+      description: 你在算什么？（写出已知量与未知量）
+      placeholder: |
+        已知：干球 25 ℃、相对湿度 60 %、气压 1013.25 hPa
+        想求：湿球温度与露点
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望的结果（以及你的依据）
+      description: 这是最重要的一栏。如果对照了文献、湿度表、探空数据或别的软件，请写明是哪一个。
+      placeholder: |
+        期望：湿球 ≈ 19.5 ℃、露点 ≈ 16.7 ℃
+        依据：ASHRAE 湿度表 / 参照软件 MetPy / 文献《X》/ 实测探空
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际发生了什么
+      description: |
+        报错 → 请完整粘贴；数值不符 → 请贴上你看到的输出。
+        CLI 用户可以直接把 JSON 贴进来。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: formula
+    attributes:
+      label: 涉及哪条公式？
+      description: 不确定就选「不确定 / 全部对比」
+      options:
+        - 不确定 / 全部对比
+        - Goff-水面
+        - Goff2-水面（Goff-Gratch 1946）
+        - Wexler-水面
+        - Buck-水面
+        - Tetens-水面
+        - Magnus-水面
+        - August-水面
+        - Arden-水面（Buck 1996 三参数）
+        - Gili-水面
+        - Goff-冰面
+        - Wexler-冰面
+        - Magnus-冰面
+        - Buck-冰面
+        - Marti-冰面
+    validations:
+      required: false
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 用的哪种模式？
+      options:
+        - 已知露点求湿球
+        - 已知湿球求露点
+        - 已知相对湿度求两者
+        - 批量计算（Excel）
+        - CLI / 脚本调用
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: "v1.3.3（CLI）／ v1.3.3（GUI）／ master 源码"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 运行环境
+      placeholder: "Windows 11 23H2 ／ Python 3.11"
+    validations:
+      required: false
