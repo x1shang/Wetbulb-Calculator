@@ -26,9 +26,13 @@
   {"method": "Goff-水面",   "result1": 16.7003, "result2": 19.5488},
   {"method": "Wexler-水面", "result1": 16.7011, "result2": 19.5490},
   {"method": "Buck-水面",   "result1": 16.6993, "result2": 19.5497},
-  {"method": "Gili-水面",   "result1": "不适用", "result2": null}
+  {"method": "Gili-水面",   "result1": 16.6998, "result2": 19.5504},
+  {"method": "Goff-冰面",   "result1": "不适用", "result2": null}
 ]}
 ```
+
+（`Gili-水面` 即**纪利公式**，属中文给排水/冷却塔工程式，原文见
+[精度与参考文献](docs/精度与参考文献.md)。超出注册域的公式保留 `"不适用"`。）
 
 `--mode` 换成 `dewpoint` / `wetbulb` 就是另外两种模式；`--help` 看全部参数；错误输入会写入 stderr 并返回退出码 2。
 
