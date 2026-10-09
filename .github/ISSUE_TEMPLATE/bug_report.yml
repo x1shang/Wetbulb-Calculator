@@ -85,7 +85,7 @@ body:
     id: version
     attributes:
       label: 版本
-      placeholder: "v1.3.3（CLI）／ v1.3.3（GUI）／ master 源码"
+      placeholder: "v1.3.4（CLI）／ v1.3.4（GUI）／ master 源码"
     validations:
       required: true
 

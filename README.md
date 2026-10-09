@@ -16,13 +16,13 @@
 **`WetBulbCLI-*.exe`**（约 6.5 MB，**零第三方依赖**），然后一条命令：
 
 ```powershell
-.\WetBulbCLI-v1.3.3.exe --mode rh --temperature 25 --value 60
+.\WetBulbCLI-v1.3.4.exe --mode rh --temperature 25 --value 60
 ```
 
 输出是 JSON（25 ℃ / 相对湿度 60 %，**逐公式**给出露点与湿球）：
 
 ```json
-{"version": "v1.3.3", "mode": "rh", "results": [
+{"version": "v1.3.4", "mode": "rh", "results": [
   {"method": "Goff-水面",   "result1": 16.7003, "result2": 19.5488},
   {"method": "Wexler-水面", "result1": 16.7011, "result2": 19.5490},
   {"method": "Buck-水面",   "result1": 16.6993, "result2": 19.5497},
@@ -61,16 +61,18 @@
 ## 安装与运行
 
 从 [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases) 下载正式版。
-GUI 资产为 `WetBulbCalculator-v1.3.3.exe`，命令行资产为 `WetBulbCLI-v1.3.3.exe`。
+GUI 资产为 `WetBulbCalculator-v1.3.4.exe`，命令行资产为 `WetBulbCLI-v1.3.4.exe`。
 同页提供 `example.xlsx`、LICENSE、第三方声明和 SHA256SUMS.txt。
 
-### 1.3.3 更新内容！
+### 1.3.4 更新内容！
 
-- **新增**：零 GUI 依赖的命令行 JSON 接口。
-- **修复**：批量非法行不再留空，输出 Excel 错误单元格与原因；自动排除已有结果文件。
-- **验证**：Windows CI 执行 GUI 三模式与批量落盘测试；打包后从中文目录执行自动冒烟检查。
-- **发布**：exe 版本来自 core.tag；tag 触发构建、验证和 Release 上传。
-- **界面与文档**：关于窗口恢复紧凑布局；参考文献、精度与限制集中维护。
+- **更正**：查得「纪利公式」（原误称"吉利公式"）的原始文献，并更正 v1.3.1 对该式的根因记述——
+  真正的错是指数常数被抄成原文的 1/10，**前因子 980.66 本来就对**。
+- **新增**：纪利公式适用域上界 20 ℃ → **120 ℃**（下界仍为 −10 ℃），20~120 ℃ 现在会给出结果。
+  本版**唯一的行为变更，且是纯新增**（没有温度失去可用性）。
+- **未改数值**：本版没有任何数值修复；已逐点对拍 v1.3.3（14 条公式 × 701 点，0 处不同）。
+- **验证**：新增纪利公式与 Goff-Gratch 在各自参考点上的自洽性断言。
+- **文档**：精度与参考文献补全书目与证据等级，编年史新增 2026-10 出处复核一节。
 
 ### 源码运行
 
@@ -88,7 +90,7 @@ Fluent Widgets 用于按钮、输入框、提示条等控件，必须安装；`c
 ```powershell
 python main.py --cli --mode rh --temperature 25 --value 60 --pressure 1013.25
 python src/cli.py --mode dewpoint --temperature 25 --value 15
-.\WetBulbCLI-v1.3.3.exe --mode wetbulb --temperature 25 --value 20
+.\WetBulbCLI-v1.3.4.exe --mode wetbulb --temperature 25 --value 20
 ```
 
 `--mode` 表示已知量：`dewpoint`（露点）、`wetbulb`（湿球）或 `rh`（相对湿度）。

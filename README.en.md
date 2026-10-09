@@ -11,17 +11,21 @@ dew point and derived moist-air parameters using three input modes and configura
 
 ## Installation
 
-Download the GUI `WetBulbCalculator-v1.3.3.exe` or console `WetBulbCLI-v1.3.3.exe`
+Download the GUI `WetBulbCalculator-v1.3.4.exe` or console `WetBulbCLI-v1.3.4.exe`
 from [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases).
 The example workbook, licenses and SHA256 checksums are separate release assets.
 
-### 1.3.3 updates!
+### 1.3.4 updates!
 
-- JSON command-line interface without GUI dependencies.
-- Invalid spreadsheet rows now contain Excel error cells and explanations.
-- Automated GUI and batch tests, plus packaged application checks from a Chinese path.
-- Versioned executables and tag-triggered CI releases.
-- Compact About dialog and consolidated scientific documentation.
+- The source of the Jili formula (previously mis-named "Gili") is now identified, and v1.3.1's
+  stated root cause for it is corrected: the exponent constant had been copied at 1/10 of the
+  published value; the 980.66 prefactor was always correct.
+- The Jili formula's registered upper bound is widened from 20 °C to 120 °C (lower bound stays
+  −10 °C). This is the only behaviour change in this release, and it is purely additive.
+- No numerical changes: cross-checked against v1.3.3 at 14 formulas × 701 points (0 differences).
+- New reference-point self-consistency assertions for the Jili and Goff-Gratch formulas.
+- Documentation: full bibliographic data and evidence grades; a provenance review section added
+  to the project history.
 
 ## Source and CLI
 
