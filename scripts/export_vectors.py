@@ -19,9 +19,24 @@
     浮点数的十进制往返是有损的：直接写 JSON 数字会经过一轮 repr/parse。
     这里统一写 Python 的 repr（17 位有效数字，可无损往返），JS 侧用 Number() 读回来，
     再用相对容差比对 —— 与 tests/test_web_parity.py 同一套口径。
+
+【--check 为什么按容差比，不按字节比】（2026-10-12 更正）
+    最初 --check 是"重新生成一遍，与已提交文件逐字节比较"。它在开发机（Windows）上一直
+    是绿的，直到 v1.3.5 第一次被推上 CI：ubuntu 的两个 job 立刻红了，而同一份代码在
+    release 流水线的 windows-latest 上是绿的。
+
+    根因不是行尾也不是环境，是**向量里存着 repr(float)，而 repr 反映的是本机 libm 的末位**。
+    同一份 core.py，MSVC 的 exp/pow 与 glibc 的结果可以差 1~几个 ULP，于是"在 Windows 上
+    生成、拿到 Linux 上校验"必然字节不同 —— 而这不代表任何人改错了东西。
+
+    页内自检本来就是按容差比的（rel 1e-12 / 温度 abs 1e-9），这条守卫跟着用同一套口径
+    才是对的：它要拦的是"core.py 改了数值却没人重新生成向量"，不是"换了台机器"。
+    现在字符串、键名、条目数、exe_tag 仍然**逐字**比（改一个字就红），只有数值走容差。
+    【代价】跨平台重新生成这份向量时，末位会与你本机不同——这是可接受的，页面与对拍都不看末位。
 """
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -32,6 +47,12 @@ if os.path.join(ROOT, 'src') not in sys.path:
 import core  # noqa: E402
 
 OUT = os.path.join(ROOT, 'web', 'src', 'vectors.js')
+
+# 过期判定的容差 —— 与页内自检、与 tests/test_web_parity.py **同一套口径**。
+# 为什么必须按容差而不是字节：向量里存的是 repr(float)，而 repr 反映的是本机 libm 的末位。
+# 同一份 core.py 在 Windows（MSVC 的 exp/pow）与 Linux（glibc）上可以差 1~几个 ULP。
+TOL_REL = 1e-12
+TOL_ABS = 1e-9
 
 # 这三处输入要覆盖：三种模式 × 各自最容易踩坑的温度
 MODE_CASES = [
@@ -180,6 +201,89 @@ def render(data):
               "})(typeof globalThis !== 'undefined' ? globalThis : this);\n")
 
 
+def _load_committed(text):
+    """从已提交的 vectors.js 里把那份 JSON 读回来（render() 写出的模板是固定的）。"""
+    start = text.index('const V = ') + len('const V = ')
+    end = text.index('\n  root.WB_VECTORS')
+    body = text[start:end].strip()
+    if body.endswith(';'):
+        body = body[:-1]
+    return json.loads(body)
+
+
+def _as_number(v):
+    """数值型（含"看起来是数字的字符串"）→ float；其余 → None。"""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str) and v.strip():
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
+
+
+def compare(expected, actual, path='$', diffs=None, worst=None, soft=0):
+    """结构比对：字符串/键/长度必须逐字一致，**数值按容差比**。
+
+    为什么不按字节比 —— 这份向量里存的是 `repr(float)`，而 `repr` 反映的是
+    **本机 libm 的末位**。同一份 core.py 在 Windows（MSVC 的 exp/pow）与
+    Linux（glibc）上算出的同一个数可以差 1~几个 ULP，于是"在开发机上生成、
+    拿到 ubuntu 上校验"必然字节不同。
+
+    这不是推测：推 v1.3.5 时 CI 的 ubuntu 两个 job 正是这样红的，而 windows 上
+    （release 的 build.ps1 里同样的 pytest）是绿的。页内自检本来就是按容差比
+    （rel 1e-12 / 温度 abs 1e-9），这条守卫跟着用同一套口径才是对的：
+    它要拦的是"core.py 改了数值却没人重新生成向量"，不是"换了台机器"。
+
+    返回 (diffs, worst)；worst = [最大相对差, 出现在哪个路径]；soft 计数容差内的差异。
+    """
+    if diffs is None:
+        diffs = []
+    if worst is None:
+        worst = [0.0, None, 0]
+
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict) or list(expected) != list(actual):
+            got = list(actual) if isinstance(actual, dict) else type(actual).__name__
+            diffs.append(f'{path}: 键不同 {list(expected)} != {got}')
+            return diffs, worst
+        for k in expected:
+            compare(expected[k], actual[k], f'{path}.{k}', diffs, worst)
+        return diffs, worst
+
+    if isinstance(expected, list):
+        if not isinstance(actual, list) or len(expected) != len(actual):
+            got = len(actual) if isinstance(actual, list) else type(actual).__name__
+            diffs.append(f'{path}: 长度不同 {len(expected)} != {got}')
+            return diffs, worst
+        for i, (e, a) in enumerate(zip(expected, actual)):
+            compare(e, a, f'{path}[{i}]', diffs, worst)
+        return diffs, worst
+
+    fe, fa = _as_number(expected), _as_number(actual)
+    if fe is not None and fa is not None:
+        # NaN 必须单独判：`nan == nan` 为假、`abs(nan - nan) <= tol` 也为假，
+        # 直接落到下面就会把两个 'nan' 报成"相对差 nan"的不一致（自测抓到的）。
+        if fe == fa or (math.isnan(fe) and math.isnan(fa)):
+            return diffs, worst
+        denom = max(abs(fe), abs(fa))
+        dev = abs(fe - fa) / denom if denom > 0 else abs(fe - fa)
+        if dev > worst[0]:
+            worst[0], worst[1] = dev, path
+        if abs(fe - fa) <= TOL_ABS or dev <= TOL_REL:
+            worst[2] += 1          # 容差内：平台 libm 末位差，不算过期
+        else:
+            diffs.append(f'{path}: {expected!r} != {actual!r}（相对差 {dev:.3e}）')
+        return diffs, worst
+
+    if expected != actual:
+        diffs.append(f'{path}: 文本不同\n    已提交:   {expected!r}\n    重新生成: {actual!r}')
+    return diffs, worst
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='生成网页版页内自检向量')
     parser.add_argument('--check', action='store_true', help='只检查是否过期，不写盘')
@@ -192,11 +296,27 @@ def main(argv=None):
             print(f'[过期] {OUT} 不存在', file=sys.stderr)
             return 1
         old = open(OUT, encoding='utf-8').read()
-        if old != text:
-            print('[过期] web/src/vectors.js 与当前 core.py 不一致，'
-                  '请运行 python scripts/export_vectors.py', file=sys.stderr)
+        if old == text:
+            print(f'[最新] 向量与 core.py {data["exe_tag"]} 一致（{data["total"]} 项，逐字节相同）')
+            return 0
+        try:
+            committed = _load_committed(old)
+        except Exception as exc:                                  # noqa: BLE001
+            print(f'[过期] {OUT} 读不回来（{exc}），请运行 python scripts/export_vectors.py',
+                  file=sys.stderr)
             return 1
-        print(f'[最新] 向量与 core.py {data["exe_tag"]} 一致（{data["total"]} 项）')
+        diffs, worst = compare(committed, data)
+        if diffs:
+            print(f'[过期] {OUT} 与当前 core.py 不一致（{len(diffs)} 处），'
+                  f'请运行 python scripts/export_vectors.py', file=sys.stderr)
+            for d in diffs[:10]:
+                print('   ' + d, file=sys.stderr)
+            return 1
+        # 走到这里说明结构与文本全对，差只差在浮点末位 → 平台 libm 差异，不是过期
+        print(f'[最新] 向量与 core.py {data["exe_tag"]} 一致（{data["total"]} 项；'
+              f'{worst[2]} 个数值与已提交文件有末位差，最大相对差 {worst[0]:.1e}'
+              f'（{worst[1]}），在容差 {TOL_REL:g} 内 —— 属 Windows/Linux 的 libm 差异，'
+              f'页内自检与对拍用的也是这套容差）')
         return 0
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

@@ -555,6 +555,13 @@ def test_self_test_vectors_are_current():
     向量是"core.py 在某个版本上的输出"的固化。core.py 改了数值而没重新生成向量，
     页面上那句"0 处超差"就会在**旧的**期望值上通过 —— 那是最坏的一种绿：
     自检按钮装作在守护，其实守护的是过去。
+
+    【为什么这条比的是容差而不是字节】（2026-10-12）
+    向量里存的是 repr(float)，而 repr 反映本机 libm 的末位；同一份 core.py 在 Windows
+    （MSVC）与 Linux（glibc）上可以差 1~几个 ULP。最早写成逐字节比较，开发机上一路全绿，
+    等 v1.3.5 第一次推上 CI 才在 ubuntu 上炸掉 —— 而 release 流水线的 windows-latest
+    用的是同一份代码、同样的 pytest，却是绿的。判过期的正确口径与页内自检一致：
+    数值 rel≤1e-12 / abs≤1e-9，字符串与结构逐字比（见 scripts/export_vectors.py 的 compare）。
     """
     proc = _run(['scripts/export_vectors.py', '--check'])
     assert proc.returncode == 0, (proc.stdout + proc.stderr).strip()
