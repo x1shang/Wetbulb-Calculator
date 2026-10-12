@@ -44,7 +44,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI failed.' }
     Copy-Item LICENSE, THIRD_PARTY_NOTICES.md, examples/example.xlsx -Destination dist -Force
     Copy-Item build/THIRD_PARTY_LICENSES.txt -Destination dist -Force
-    $assets = @($exe, $cli)
+    # 网页版：交付形态就是一个 .html，与两个 exe 一起发。
+    # 两个 --check 都是逐字节比对（向量是否与 core.py 一致、index.html 是否落后于 web/src/），
+    # 任一过期就 fail —— 否则用户拿到的是一个"看起来正常但内容是旧的"页面。
+    & $Python scripts/export_vectors.py --check
+    if ($LASTEXITCODE -ne 0) { throw 'Web self-test vectors are stale.' }
+    & $Python scripts/build_web.py --check
+    if ($LASTEXITCODE -ne 0) { throw 'web/index.html is stale.' }
+    $webHtml = Join-Path $PSScriptRoot "dist/WetBulbCalculator-web-$tag.html"
+    Copy-Item web/index.html -Destination $webHtml -Force
+    $assets = @($exe, $cli, $webHtml)
     $hashes = foreach ($asset in $assets) { "$( (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower() )  $(Split-Path $asset -Leaf)" }
     $hashes | Set-Content dist/SHA256SUMS.txt -Encoding utf8
     Write-Host "Built and verified $tag"

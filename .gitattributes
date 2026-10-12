@@ -10,6 +10,27 @@
 *.ico   binary
 *.xlsx  binary
 *.png   binary
+*.webp  binary
 *.jpg   binary
 *.jpeg  binary
 *.pdf   binary
+
+# ---------------------------------------------------------------------------
+# 上面那条 `* text=auto` 的例外：web/index.html 不参与行尾转换。
+#
+# 【先把一件容易搞错的事说清楚 —— 这里最初写错了，已实测更正】
+#   没有这条规则时，Windows 上（core.autocrlf=true）检出这个文件确实会把它转成 CRLF，
+#   实测 230,545 → 236,906 字节。**但这不会让任何测试变红**：
+#   scripts/build_web.py --check 用 Python 的文本模式 open() 读文件，而它默认开启
+#   universal newlines（newline=None），CRLF 会被还原成 LF 再比较，所以 --check 照常通过，
+#   页面也照常能在浏览器里打开。已实测：把一份 CRLF 的 index.html 喂给 --check，判定"一致"。
+#   （当初是怎么写错的：在内存里把构建结果 replace 成 CRLF 再比字符串，跳过了文件读取这一步。
+#   本仓库 v1.3.1 那次"根因记述是错的"也是同一类毛病 —— 结论下在了验证路径之外。）
+#
+# 【那为什么还要加这条】
+#   1. 交付物要逐字节稳定：dist/WetBulbCalculator-web-*.html 就是把这个文件拷过去的，
+#      检出平台不同就得到不同字节，SHA256SUMS.txt 与"本地构建 vs CI 构建"的比较随之失效。
+#   2. 避免出现"磁盘上的这一份不是构建脚本写出来的那一份"这种状态。它无害，但会让人怀疑
+#      构建到底跑没跑过 —— 而这恰好是 build_web.py --check 想回答的问题，不该由行尾来干扰。
+# 用 -text 而不是 binary：它仍是文本（能正常 diff / blame），只是不参与行尾转换。
+web/index.html  -text

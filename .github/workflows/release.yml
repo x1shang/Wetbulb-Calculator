@@ -44,6 +44,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/*.exe
+            dist/WetBulbCalculator-web-*.html
             dist/SHA256SUMS.txt
             dist/LICENSE
             dist/THIRD_PARTY_NOTICES.md

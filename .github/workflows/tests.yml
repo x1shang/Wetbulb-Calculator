@@ -41,3 +41,32 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m pytest -q -rs
+  # 网页版的端到端回归：真 Chromium 打开 file:// 的 web/index.html。
+  #
+  # 【为什么单开一个 job 而不是塞进上面两个】
+  #   playwright + chromium 加起来几百 MB，而上面两个 job 分别代表"零依赖的计算核心"
+  #   与"PySide2 GUI"这两条互不相干的链路；把浏览器塞进去只会拖慢它们。
+  #   代价是这一层在 2026-10 之前**根本没在 CI 里跑过** —— 结果是"强调色取色器 100%
+  #   点不动"这种一整块死控件一直没人发现。数值有 test_web_parity 守，链路必须有这一条。
+  web-e2e:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      # openpyxl 用来验证网页版自己写的 xlsx 真的合规（test_web_e2e 里 importorskip）
+      - run: python -m pip install -r requirements-dev.txt openpyxl playwright
+      - run: python -m playwright install --with-deps chromium
+      - name: Web regression (e2e + numeric parity + UI parity)
+        # 显式列文件：这三条都必须在**装了浏览器**的环境里跑。
+        # test_web_parity 与 test_web_ui_parity 本身不需要浏览器，放这里是为了让
+        # "网页版"这一摊的红灯集中在一个 job 里，而不是分散在 matrix 的两个 Python 版本上。
+        run: python -m pytest tests/test_web_e2e.py tests/test_web_parity.py tests/test_web_ui_parity.py -q -rs
+      # 构建产物是否落后于源码 —— 在 Linux 上跑一次，顺带证明它不依赖 Windows 的行尾
+      - run: python scripts/export_vectors.py --check
+      - run: python scripts/build_web.py --check

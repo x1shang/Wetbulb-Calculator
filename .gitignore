@@ -13,6 +13,18 @@
 /.vscode/
 
 # 构建产物（绝不入库；见 README「产物与授权政策」）
+#
+# 【唯一的例外 · web/index.html】
+#   网页版的交付形态就是"一个 .html"——它的价值有一半在于"在 GitHub 上点开那个
+#   文件就能看、能右键另存"，不入库这条价值就没了。所以它虽然同样是构建产物
+#   （由 scripts/build_web.py 从 web/src/ 组装），仍然入库。配套三道闸：
+#     1. .gitattributes 里给它加了 `-text`，让它在任何平台检出后字节都一致
+#        （不加会被 Windows 转成 CRLF，交付物与 SHA256 随之在不同平台不同；
+#         注意这**不会**让 --check 失败，理由见 .gitattributes 里的实测说明）；
+#     2. tests/test_web_parity.py::test_single_file_build_is_current 逐字节
+#        校验它没有落后于 web/src/；
+#     3. .github/workflows/release.yml 把它作为发行资产一起上传。
+#   除它之外的一切构建产物（dist/ build/ *.exe）仍然一律不入库。
 /dist/
 /build/
 *.spec

@@ -11,21 +11,34 @@ dew point and derived moist-air parameters using three input modes and configura
 
 ## Installation
 
-Download the GUI `WetBulbCalculator-v1.3.4.exe` or console `WetBulbCLI-v1.3.4.exe`
+Download the GUI `WetBulbCalculator-v1.3.5.exe` or console `WetBulbCLI-v1.3.5.exe`
 from [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases).
-The example workbook, licenses and SHA256 checksums are separate release assets.
+The same page ships `WetBulbCalculator-web-v1.3.5.html` — the single-file web version —
+plus the example workbook, licenses and SHA256 checksums.
 
-### 1.3.4 updates!
+### 1.3.5 updates!
 
-- The source of the Jili formula (previously mis-named "Gili") is now identified, and v1.3.1's
-  stated root cause for it is corrected: the exponent constant had been copied at 1/10 of the
-  published value; the 980.66 prefactor was always correct.
-- The Jili formula's registered upper bound is widened from 20 °C to 120 °C (lower bound stays
-  −10 °C). This is the only behaviour change in this release, and it is purely additive.
-- No numerical changes: cross-checked against v1.3.3 at 14 formulas × 701 points (0 differences).
-- New reference-point self-consistency assertions for the Jili and Goff-Gratch formulas.
-- Documentation: full bibliographic data and evidence grades; a provenance review section added
-  to the project history.
+- **New: a single-file web version** ([`web/index.html`](web/index.html), ~230 KB). Double-click to
+  run, works offline, and every calculation happens in your browser — nothing is uploaded.
+  Its numeric core (`web/src/core.js`) is a line-by-line port of `src/core.py`, verified by
+  1035 cross-checked cases plus 351 golden vectors that are regenerated from the real `core.py`
+  and can be re-run from a "self-test" button inside the page.
+- **No desktop-side numerical changes.** Every formula, coefficient, registered range, solver and
+  derived quantity is bit-for-bit identical to v1.3.4, so the two versions can be compared directly.
+  The version number was raised only so the release workflow's `tag == core.tag` check can pass.
+- **Two web-version UI defects fixed**: the accent-colour picker never applied (a strict-mode
+  `ReferenceError` on every drag) and the iteration chart's axis was labelled in the selected
+  temperature scale while its data stayed in °C. Both now have end-to-end regression tests.
+- **CI now runs the browser layer.** `tests/test_web_e2e.py` used to be skipped everywhere; it is
+  the only coverage for the UI chain, and its absence is exactly why the dead colour picker went
+  unnoticed. A dedicated `web-e2e` job installs Playwright + Chromium and runs it on every push.
+- **New `tests/test_web_ui_parity.py`** guards the layer the numeric parity test cannot see:
+  unit-conversion constants/ranges and the batch column rules, each of which is written twice
+  (Python and JavaScript). A wrong factor there leaves the core perfectly correct while the
+  number on screen is wrong.
+- **Documented web/desktop differences.** The web version is a **subset**: it has no CLI, its batch
+  export rounds to 4 decimals, keeps only columns A/B/C, and writes `#VALUE!` as text rather than a
+  real Excel error value. All of these are listed on the page's own "About" tab and in the Chinese README.
 
 ## Source and CLI
 
@@ -51,13 +64,37 @@ Results are appended and saved to `result_<input>.xlsx`; an existing result with
 Files starting with `result_` or `~$` are ignored. Invalid rows produce `#VALUE!` plus an error explanation.
 The input is preserved. Goff water/ice is selected by the dry-bulb temperature sign.
 
+## Web version (single-file HTML)
+
+`web/index.html` is a self-contained page: no server, no Python, no network requests. It covers all
+three input modes, all 14 formulas and their "not applicable" rules, the same unit conversions
+(°C/K/°F × Pa/hPa/mmHg/cmHg/bar), the same 24 derived quantities, the interactive iteration plot,
+CSV/XLSX batch import and export with the A/B/C convention and `#VALUE!` rule, JSON/CSV export,
+PNG result card, share links and local storage.
+
+It has its own version number (`2.x.y`) so you can tell at a glance whether it lags the desktop
+build; the repository itself only ever tags the desktop line (`v1.x.y`). See the Chinese README for
+the full list of deliberate differences.
+
 ## Development
 
 Install requirements-dev.txt and run `pwsh -File run_tests.ps1`.
 Windows CI requires the GUI tests to run; local runs skip them if dependencies are unavailable.
+
+Web-specific checks:
+
+```powershell
+python scripts/export_vectors.py --check    # golden vectors still match core.py
+python scripts/build_web.py --check         # web/index.html is not stale
+python -m pytest tests/test_web_ui_parity.py -q
+python -m pytest tests/test_web_e2e.py -q   # needs: pip install playwright openpyxl
+                                            #         playwright install chromium
+```
+
 To build, install requirements-build.txt in Python 3.10 at an ASCII path and run
 `pwsh -File build.ps1 -Python (Get-Command python).Source`.
-The committed spec produces and smoke-tests both executables. Builds are not guaranteed bit-for-bit identical.
+The committed spec produces and smoke-tests both executables, and the same script verifies and
+copies the web page, so one release ships three assets. Builds are not guaranteed bit-for-bit identical.
 Push a new tag matching core.tag to trigger a tested release. Historical tag rewrites are documented below.
 
 ## Documentation and licensing

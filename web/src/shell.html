@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>湿球计算器 · WetBulb Calculator（网页版 v2.0.0）</title>
+<meta name="description" content="科研级湿球/露点温度计算器网页版：14 条国际公式、三模式、24 项派生气象参数、迭代可视化。数值内核由桌面版 src/core.py v1.3.5 移植。">
+<meta name="color-scheme" content="light dark">
+<!-- 图标：与窗口同源，避免任何外部请求。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2347949d'/%3E%3Cpath d='M16 6s6 6.8 6 10.9A6 6 0 0 1 10 16.9C10 12.8 16 6 16 6z' fill='%23fff'/%3E%3Cpath d='M16 11v7' stroke='%2347949d' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>/*__APP_CSS__*/</style>
+</head>
+<body>
+<!-- ===================== 背景层（为玻璃提供可折射的内容） ===================== -->
+<div class="aurora" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+<!-- ===================== 图标精灵 ===================== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="i-droplet"><path d="M12 3.2s6 6.6 6 10.6a6 6 0 0 1-12 0c0-4 6-10.6 6-10.6z"/><path d="M12 9.5v6.2"/></g>
+    <g id="i-calc"><rect x="4" y="3" width="16" height="18" rx="3.2"/><path d="M8 7.5h8M8 12h2M12 12h2M16 12h.01M8 16h2M12 16h2M16 16h.01"/></g>
+    <g id="i-batch"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9.5h18M9 9.5V20M12.5 13.5h5.5M12.5 16.5h5.5"/></g>
+    <g id="i-book"><path d="M5 5a2 2 0 0 1 2-2h11v18H7a2 2 0 0 1-2-2z"/><path d="M9 3v18"/><path d="M12 8h4M12 11h4"/></g>
+    <g id="i-info"><circle cx="12" cy="12" r="8.6"/><path d="M12 11.2v5.2M12 8.2h.01"/></g>
+    <g id="i-flask"><path d="M9.5 3.5h5M10.5 3.5v5L6.2 16.4A3 3 0 0 0 8.9 21h6.2a3 3 0 0 0 2.7-4.6L13.5 8.5v-5"/><path d="M7.4 14.5h9.2"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4"/></g>
+    <g id="i-moon"><path d="M20.2 14.8A8.6 8.6 0 0 1 9.2 3.8a7.2 7.2 0 1 0 11 11z"/></g>
+    <g id="i-sliders"><path d="M4 8h9M19 8h1M4 16h3M13 16h7"/><circle cx="16" cy="8" r="2.4"/><circle cx="10" cy="16" r="2.4"/></g>
+    <g id="i-camera"><path d="M4 8.5h3.2L8.6 6.5h6.8l1.4 2H20v10.5H4z"/><circle cx="12" cy="13.4" r="3.3"/></g>
+    <g id="i-code"><path d="M9 7.5 4.5 12 9 16.5M15 7.5 19.5 12 15 16.5"/></g>
+    <g id="i-table"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 10h18M9.5 10v10M15 10v10"/></g>
+    <g id="i-link"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1-1"/></g>
+    <g id="i-sync"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20.5 4v4.5H16"/></g>
+    <g id="i-upload"><path d="M12 16.5V5"/><path d="M8 9l4-4 4 4"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></g>
+    <g id="i-download"><path d="M12 4.5V16"/><path d="M8 12l4 4 4-4"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></g>
+    <g id="i-check"><path d="M20 6.5 9.5 17 4.5 12"/></g>
+    <g id="i-alert"><path d="M12 3.5 21 20H3z"/><path d="M12 9.5v5M12 17.4h.01"/></g>
+    <g id="i-x"><path d="M6 6l12 12M18 6 6 18"/></g>
+    <g id="i-chart"><path d="M4.5 4v16M4.5 20h15"/><path d="M8 16.5l3.2-5.2 3 3L18.5 6"/></g>
+    <g id="i-share"><circle cx="6" cy="12" r="2.6"/><circle cx="17.5" cy="6" r="2.6"/><circle cx="17.5" cy="18" r="2.6"/><path d="M8.4 10.9 15.2 7.2M8.4 13.1l6.8 3.7"/></g>
+    <g id="i-github"><path d="M12 3a9 9 0 0 0-2.9 17.5c.5.1.7-.2.7-.5v-1.7c-2.5.5-3-1.2-3-1.2-.4-1-1-1.3-1-1.3-.9-.6 0-.6 0-.6.9.1 1.4 1 1.4 1 .8 1.4 2.2 1 2.7.8.1-.6.3-1 .6-1.3-2-.2-4.1-1-4.1-4.5 0-1 .3-1.8.9-2.4-.1-.2-.4-1.1.1-2.3 0 0 .8-.3 2.6 1a9 9 0 0 1 4.7 0c1.8-1.3 2.6-1 2.6-1 .5 1.2.2 2.1.1 2.3.6.6.9 1.4.9 2.4 0 3.5-2.1 4.3-4.1 4.5.4.4.7 1 .7 2v2.9c0 .3.2.6.7.5A9 9 0 0 0 12 3z"/></g>
+  </defs>
+</svg>
+
+<div class="shell">
+
+  <!-- ===================== 顶栏 ===================== -->
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-droplet"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">
+          湿球计算器
+          <span class="muted" style="font-weight:600;font-size:14px">WetBulb Calculator</span>
+        </div>
+        <div class="brand-sub">
+          <span class="chip" id="chip-web-version">网页版 v2.0.0</span>
+          <span class="chip muted">对应桌面版 v1.3.5</span>
+          <span class="muted tiny">14 条公式 · 三模式 · 24 项派生量</span>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+      <button class="btn small" id="btn-selftest" type="button" title="用桌面版 core.py 生成的黄金向量就地校验网页版数值内核">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-flask"/></svg>
+        数值自检
+      </button>
+      <button class="btn small icon" id="btn-theme" type="button" title="切换明暗主题" aria-label="切换明暗主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-moon" id="theme-icon"/></svg>
+      </button>
+      <a class="btn small" id="link-repo-top" href="https://github.com/x1shang/Wetbulb-Calculator" target="_blank" rel="noopener noreferrer" title="在 GitHub 上查看源码与发行版">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><use href="#i-github"/></svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <!-- ===================== 标签导航 ===================== -->
+  <nav class="tabs glass" role="tablist" aria-label="功能分区">
+    <button class="tab" id="tab-calc" role="tab" aria-selected="true" aria-controls="view-calc" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-calc"/></svg>计算
+    </button>
+    <button class="tab" id="tab-batch" role="tab" aria-selected="false" aria-controls="view-batch" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-batch"/></svg>批量计算
+    </button>
+    <button class="tab" id="tab-formulas" role="tab" aria-selected="false" aria-controls="view-formulas" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-book"/></svg>公式档案
+    </button>
+    <button class="tab" id="tab-about" role="tab" aria-selected="false" aria-controls="view-about" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-info"/></svg>关于
+    </button>
+  </nav>
+
+  <main>
+  <!-- ===================================================================== -->
+  <!-- 视图 1：计算                                                            -->
+  <!-- ===================================================================== -->
+  <section class="view active" id="view-calc" role="tabpanel" aria-labelledby="tab-calc">
+    <div class="grid-calc">
+
+      <!-- ---------- 左栏：输入 ---------- -->
+      <div class="col">
+        <div class="card glass">
+          <div class="card-head">
+            <h2 class="card-title"><span class="dot"></span>输入</h2>
+            <div class="spacer"></div>
+            <span class="chip muted tiny" id="chip-units">℃ · hPa</span>
+          </div>
+
+          <div class="field">
+            <div class="field-label">计算模式<span class="field-hint">决定第二个输入框的含义</span></div>
+            <div class="segmented" role="group" aria-label="计算模式">
+              <button type="button" data-mode="0" aria-pressed="true">已知露点<br>求湿球</button>
+              <button type="button" data-mode="1" aria-pressed="false">已知湿球<br>求露点</button>
+              <button type="button" data-mode="2" aria-pressed="false">已知相对<br>湿度</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label"><span>干球温度：</span><span class="field-hint" id="hint-dry">-150~200℃</span></div>
+            <div class="input-wrap">
+              <input type="text" id="in-dry" inputmode="decimal" autocomplete="off" placeholder="-150~200℃" aria-label="干球温度">
+              <span class="unit" id="unit-dry">℃</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label"><span id="label-other">露点温度：</span><span class="field-hint" id="hint-other">-150~200℃</span></div>
+            <div class="input-wrap">
+              <input type="text" id="in-other" inputmode="decimal" autocomplete="off" placeholder="-150~200℃" aria-label="露点温度">
+              <span class="unit" id="unit-other">℃</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label"><span>大气压强：</span><span class="field-hint" id="hint-pressure">500~1100hPa</span></div>
+            <div class="input-wrap">
+              <input type="text" id="in-pressure" inputmode="decimal" autocomplete="off" placeholder="500~1100hPa" aria-label="大气压强">
+              <span class="unit" id="unit-pressure">hPa</span>
+            </div>
+          </div>
+
+          <!-- 迭代区（桌面版在"已知湿球求露点"模式下隐藏该区，网页版保持一致） -->
+          <div id="iteration-box">
+            <hr class="divider">
+            <div class="field-label" style="margin-bottom:10px">
+              <span>迭代区</span>
+              <span class="field-hint">初值只影响迭代路径，不影响结果</span>
+            </div>
+            <div class="field">
+              <div class="field-label"><span>湿球迭代初值</span></div>
+              <select id="in-strategy" aria-label="湿球迭代初值策略">
+                <option value="Td">Tw=Td（以第二个输入框为初值）</option>
+                <option value="Tn">Tw=T-n（T−2，T&lt;0 时为 T−2，否则 T−5）</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <span>精度调节旋钮</span>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="in-precision" min="2" max="10" step="1" value="7" aria-label="迭代容差 10 的负指数">
+                <span class="slider-value mono" id="tol-readout">1e-7</span>
+              </div>
+            </div>
+          </div>
+
+          <hr class="divider">
+          <div class="btn-row">
+            <button class="btn primary grow" id="btn-calc" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>
+              计算
+            </button>
+            <button class="btn" id="btn-clear" type="button" title="清空">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sync"/></svg>
+              清空
+            </button>
+            <button class="btn icon" id="btn-units" type="button" title="设置单位" aria-label="设置单位">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sliders"/></svg>
+            </button>
+          </div>
+          <p class="tiny muted" style="margin:12px 0 0">
+            提示：任一输入框按 <span class="kbd">Enter</span> 直接计算；数值支持科学计数法（如 <span class="kbd">1e3</span>）。
+          </p>
+        </div>
+      </div>
+
+      <!-- ---------- 右栏：结果 ---------- -->
+      <div class="col">
+        <div class="card glass">
+          <div class="card-head">
+            <h2 class="card-title"><span class="dot"></span><span id="results-title">逐公式结果</span></h2>
+            <div class="spacer"></div>
+            <button class="btn small" id="btn-png" type="button" title="把当前结果绘制成一张高清卡片并保存为 PNG">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-camera"/></svg>结果卡片
+            </button>
+            <button class="btn small" id="btn-json" type="button" title="导出 JSON（等价于桌面版命令行接口的输出）">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-code"/></svg>JSON
+            </button>
+            <button class="btn small" id="btn-csv" type="button" title="导出 CSV">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-table"/></svg>CSV
+            </button>
+            <button class="btn small" id="btn-share" type="button" title="把当前输入编码进链接">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-share"/></svg>分享链接
+            </button>
+          </div>
+
+          <div id="results-empty" class="chart-empty">
+            填好三个输入框后点「计算」<br>
+            <span class="tiny">14 条公式会逐条给出结果，不适用的公式会写明原因。</span>
+          </div>
+
+          <div class="table-wrap hidden" id="results-wrap">
+            <table class="results" id="results-table">
+              <thead>
+                <tr>
+                  <th scope="col">公式</th>
+                  <th scope="col">适用域</th>
+                  <th scope="col" id="th-result1">湿球温度</th>
+                  <th scope="col" id="th-result2" class="hidden">露点温度</th>
+                  <th scope="col" id="th-rh" class="hidden">相对湿度</th>
+                  <th scope="col">状态</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+          <p class="tiny muted" id="results-note" style="margin:12px 0 0"></p>
+        </div>
+
+        <div class="card glass" id="derived-card">
+          <div class="card-head">
+            <h2 class="card-title"><span class="dot"></span>常用气象参数</h2>
+            <div class="spacer"></div>
+            <span class="chip muted tiny" id="derived-method">点结果表任意一行</span>
+          </div>
+          <div id="derived-empty" class="chart-empty" style="height:120px">
+            点击上面结果表的任意一行，这里给出该公式的 24 项派生量
+          </div>
+          <div id="derived-host" class="derived-grid hidden"></div>
+        </div>
+
+        <div class="card glass chart-shell">
+          <div class="card-head">
+            <h2 class="card-title"><span class="dot"></span>迭代可视化</h2>
+            <div class="spacer"></div>
+            <span class="chip muted tiny">左：温度迭代 · 右：残差（对数）</span>
+          </div>
+          <div class="chart-toolbar">
+            <select id="chart-method" style="max-width:260px" aria-label="选择要显示的公式"></select>
+            <label class="switch" title="残差轴改为对数刻度">
+              <input type="checkbox" id="chart-log" checked>
+              <span class="track"></span>
+              <span>残差对数轴</span>
+            </label>
+            <div class="spacer" style="flex:1 1 auto"></div>
+            <button class="btn small" id="btn-chart-png" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>图表 PNG
+            </button>
+          </div>
+          <div id="chart-empty" class="chart-empty">先计算，再点这一栏看牛顿迭代的收敛过程</div>
+          <div id="chart-host" class="chart-host hidden"></div>
+          <div id="chart-legend" class="chart-legend"></div>
+          <div class="chart-tip" id="chart-tip"></div>
+          <p class="tiny muted" style="margin:10px 0 0">
+            与桌面版一致：略去第 1 个迭代点，因为那是用户填的初值本身。
+            注：残差落到浮点噪声底（约 1e-15）之后，迭代步数会依赖底层数学库的最后一位舍入，
+            所以本图与 exe 的步数可能相差几步 —— 最终结果不受影响。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- 视图 2：批量计算                                                        -->
+  <!-- ===================================================================== -->
+  <section class="view" id="view-batch" role="tabpanel" aria-labelledby="tab-batch">
+    <div class="card glass">
+      <div class="card-head">
+        <h2 class="card-title"><span class="dot"></span>批量计算</h2>
+        <div class="spacer"></div>
+        <span class="chip muted tiny">沿用桌面版的 A / B / C 列表头约定</span>
+      </div>
+
+      <div class="notice" style="margin-bottom:16px">
+        与桌面版的对应关系：
+        <ul>
+          <li>表头必须含 <code class="inline">A</code>、<code class="inline">B</code>、<code class="inline">C</code> 三列 —— A = 干球温度、B = 当前模式的已知量、C = 大气压强（单位按当前设置）。</li>
+          <li>结果追加在末尾列：<span class="mono">干球℃ / 露点℃ / 湿球℃ / 相对湿度% / 大气hPa</span>，另加一列 <span class="mono">错误</span> 写原因。</li>
+          <li>非法行写 <span class="mono">#VALUE!</span> 并继续算其它行；整表算完才导出，导出文件自动加 <span class="mono">result_</span> 前缀。</li>
+          <li>每条公式的选定规则与桌面版批量一致：干球 ≥ 0 ℃ 用 <span class="mono">Goff-水面</span>，否则用 <span class="mono">Goff-冰面</span>。</li>
+        </ul>
+      </div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖入 CSV / XLSX 文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#i-upload"/></svg>
+        <div class="big">把 .csv 或 .xlsx 拖到这里，或点击选择文件</div>
+        <div class="small">全程在浏览器本地解析，文件不会上传到任何地方</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,text/csv" class="hidden">
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <button class="btn small" id="btn-sample" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>
+          下载示例 CSV
+        </button>
+        <button class="btn small" id="btn-batch-clear" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-sync"/></svg>
+          清空
+        </button>
+        <div class="spacer" style="flex:1 1 auto"></div>
+        <span class="chip muted tiny" id="batch-mode-chip">模式：已知露点求湿球</span>
+      </div>
+
+      <div id="batch-progress-wrap" class="hidden" style="margin-top:16px">
+        <div class="progress"><i id="batch-progress"></i></div>
+        <p class="tiny muted" id="batch-progress-text" style="margin:8px 0 0"></p>
+      </div>
+
+      <div class="batch-stats hidden" id="batch-stats">
+        <div class="stat tot"><div class="n" id="stat-total">0</div><div class="l">总行数</div></div>
+        <div class="stat ok"><div class="n" id="stat-ok">0</div><div class="l">计算成功</div></div>
+        <div class="stat bad"><div class="n" id="stat-bad">0</div><div class="l">非法行</div></div>
+      </div>
+
+      <div class="row hidden" id="batch-actions" style="margin:4px 0 12px">
+        <button class="btn primary small" id="btn-batch-xlsx" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>
+          导出结果 XLSX
+        </button>
+        <button class="btn small" id="btn-batch-csv" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>
+          导出结果 CSV
+        </button>
+        <span class="tiny muted" id="batch-filename"></span>
+      </div>
+
+      <div class="preview-scroll hidden" id="batch-scroll">
+        <table class="preview" id="batch-table">
+          <thead><tr id="batch-head"></tr></thead>
+          <tbody id="batch-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- 视图 3：公式档案                                                        -->
+  <!-- ===================================================================== -->
+  <section class="view" id="view-formulas" role="tabpanel" aria-labelledby="tab-formulas">
+    <div class="card glass">
+      <div class="card-head">
+        <h2 class="card-title"><span class="dot"></span>公式注册表</h2>
+        <div class="spacer"></div>
+        <span class="chip muted tiny" id="formula-count"></span>
+      </div>
+      <p class="tiny muted" style="margin:-6px 0 14px">
+        下表直接来自计算内核的注册表（与桌面版 <code class="inline">src/core.py</code> 的 FORMULAS 一致）。
+        <strong>适用域</strong>是公式被允许使用的温度区间：引擎按它判定「不适用」，写宽了就等于替用户宣布"这个公式在这里也能用"。
+        冰面公式的上界一律 0 ℃ —— 常压下 0 ℃ 以上不存在冰面，冰面式在正温上给的是霜点。
+      </p>
+      <div class="formula-list" id="formula-list"></div>
+    </div>
+
+    <div class="card glass" style="margin-top:16px">
+      <div class="card-head">
+        <h2 class="card-title"><span class="dot"></span>公式族（6 族）</h2>
+      </div>
+      <div class="formula-list" id="family-list"></div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- 视图 4：关于                                                            -->
+  <!-- ===================================================================== -->
+  <section class="view" id="view-about" role="tabpanel" aria-labelledby="tab-about">
+    <div class="card glass">
+      <div class="about-hero">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#i-droplet"/></svg>
+        </div>
+        <div>
+          <h2>湿球计算器 · 网页版 <span class="mono" id="about-web-tag">v2.0.0</span></h2>
+          <p>RDFZ 降水相态研究性学习小组 · 朱嘉赫 王一博 刘思毅 制作</p>
+          <p class="tiny">数值内核移植自桌面版 <span class="mono" id="about-exe-tag">v1.3.5</span> 的 <code class="inline">src/core.py</code>，逐点对拍通过。</p>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="grid-calc" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+        <div>
+          <h3 class="card-title" style="margin-bottom:8px"><span class="dot"></span>计算验证</h3>
+          <p class="tiny muted" style="margin:0">
+            经过 IAPWS-95 + MK2005 + Stull + ASHRAE + Bolton 五源交叉验证。
+            桌面版的完整精度表、每条公式的已知局限与参考文献，见仓库
+            <a href="https://github.com/x1shang/Wetbulb-Calculator/blob/main/docs/%E7%B2%BE%E5%BA%A6%E4%B8%8E%E5%8F%82%E8%80%83%E6%96%87%E7%8C%AE.md" target="_blank" rel="noopener noreferrer">docs/精度与参考文献.md</a>。
+          </p>
+        </div>
+        <div>
+          <h3 class="card-title" style="margin-bottom:8px"><span class="dot"></span>版本号怎么读</h3>
+          <p class="tiny muted" style="margin:0">
+            网页版用 <span class="mono">2.x.y</span>，桌面版用 <span class="mono">1.x.y</span>，两者刻意不同号：
+            网页版 <span class="mono">v2.0.0</span> 对应桌面版 <span class="mono">v1.3.5</span>；
+            桌面版升到 <span class="mono">1.3.6</span> 时，网页版内核跟进则记作 <span class="mono">2.0.1</span>。
+            这样一眼就能看出"网页版是不是落后了"。
+            <br>仓库的 git tag **只有桌面版这一套**（<span class="mono">v1.x.y</span>）：网页版的
+            <span class="mono">2.x.y</span> 不单独打 tag，而是写在同一次 Release 的说明里 ——
+            一个仓库挂两套 tag 比混号更容易让人迷路。
+          </p>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <h3 class="card-title" style="margin-bottom:10px"><span class="dot"></span>数值自检</h3>
+      <p class="tiny muted" style="margin:0 0 12px">
+        网页版的计算内核是桌面版 <code class="inline">src/core.py</code> 的移植。为了让它"没漂移"这件事可自证，
+        这里内置了一包由**真的 core.py** 生成的黄金向量：点下面的按钮就地重算并逐项比对。
+      </p>
+      <div class="row">
+        <button class="btn primary" id="btn-selftest-2" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#i-flask"/></svg>
+          运行数值自检
+        </button>
+        <span class="tiny muted" id="selftest-summary">尚未运行</span>
+      </div>
+      <div class="self-test-result" id="selftest-host"></div>
+
+      <hr class="divider">
+
+      <h3 class="card-title" style="margin-bottom:10px"><span class="dot"></span>与桌面版的有意差异</h3>
+      <div class="notice">
+        <ul>
+          <li><strong>界面布局完全重做</strong>：桌面版受 PySide2 布局约束，网页版按液态玻璃风格重新排布，但术语、模式名、单位、状态文案与桌面版一一对应。</li>
+          <li><strong>切换模式 / 改单位不再清空输入框</strong>：桌面版会清空（<span class="mono">clearall()</span>），这里保留已填数值，因为标签会跟着模式变，不会误解。</li>
+          <li><strong>结果表头按模式正确书写</strong>：桌面版在「已知湿球求露点」模式下表头仍写「| 相对湿度」，属措辞瑕疵，这里按模式语义更正。</li>
+          <li><strong>迭代图是可交互 SVG</strong>：桌面版弹独立的 matplotlib 窗口；这里内嵌、可悬浮读数、可导出 PNG。纵轴与悬浮读数都写死 ℃，与桌面版 <span class="mono">plt.ylabel('温度估计值 (°C)')</span> 一致，不跟随上方温标 —— 曲线数据本来就是 ℃。</li>
+          <li><strong>批量计算改用浏览器内的 CSV / XLSX 导入导出</strong>：桌面版读程序目录里的 xlsx 并写 <span class="mono">result_*</span>；网页版没有文件系统，改为手动选择与下载。列约定（A/B/C）、Goff 水面/冰面选定规则与错误规则一致，但**导出文件本身有三处不等价**，逐条列在下面。</li>
+          <li><strong>批量导出的结果被截到 4 位小数</strong>：桌面版写完整 double（如 <span class="mono">16.70033847913146</span>），网页版写 <span class="mono">16.7003</span>。计算核心本身无差异，差异只在导出的文件里 —— 若你要拿这批数字继续算，请用桌面版。</li>
+          <li><strong>批量导出只保留 A/B/C 三列</strong>：桌面版把结果列追加到原表右侧、原样保留其余列；网页版重建一张三列输入 + 结果 + 错误列的表，<strong>D 列及其后的原始数据会丢失</strong>。</li>
+          <li><strong>批量导出的 <span class="mono">#VALUE!</span> 是文本而非 Excel 错误值</strong>：桌面版写的是真正的错误单元格（<span class="mono">ISERROR()</span> 认），网页版写的是同名字符串（肉眼相同，公式不认）。</li>
+          <li><strong>没有命令行接口</strong>：桌面版另有 <span class="mono">WetBulbCLI</span>（JSON 输出、退出码，便于脚本集成），网页版没有对应物。网页版是桌面版的<strong>子集</strong>。</li>
+          <li><strong>新增</strong>：数值自检、公式档案、结果卡片 PNG、JSON/CSV 导出、分享链接、记住上次设置与主题、批量 CSV 导入。</li>
+        </ul>
+      </div>
+
+      <hr class="divider">
+
+      <div class="row">
+        <a class="btn" href="https://github.com/x1shang/Wetbulb-Calculator" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><use href="#i-github"/></svg>
+          源码仓库
+        </a>
+        <a class="btn" href="https://github.com/x1shang/Wetbulb-Calculator/releases" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>
+          下载桌面版
+        </a>
+        <a class="btn" href="https://github.com/x1shang/Wetbulb-Calculator/issues/new/choose" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert"/></svg>
+          反馈问题
+        </a>
+        <span class="tiny muted">MIT License</span>
+      </div>
+    </div>
+  </section>
+  </main>
+
+  <!-- ===================== 页脚：引导下载桌面版 ===================== -->
+  <footer class="footer glass">
+    <span>
+      <strong>网页版是桌面版的子集</strong>：命令行接口（JSON 输出）、离线 exe、以及与本机文件联动的批量流程都在桌面版里。
+    </span>
+    <span class="sep">·</span>
+    <a class="cta" href="https://github.com/x1shang/Wetbulb-Calculator/releases" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-download"/></svg>
+      到 GitHub Releases 下载完整版
+    </a>
+    <div class="spacer" style="flex:1 1 auto"></div>
+    <span class="tiny">网页版 <span class="mono" id="footer-web-tag">v2.0.0</span> · 对应桌面版 <span class="mono" id="footer-exe-tag">v1.3.5</span></span>
+    <span class="sep">·</span>
+    <a class="tiny" href="https://github.com/x1shang/Wetbulb-Calculator" target="_blank" rel="noopener noreferrer">x1shang/Wetbulb-Calculator</a>
+  </footer>
+</div>
+
+<!-- ===================== 单位设置弹窗 ===================== -->
+<div class="modal-backdrop" id="modal-units" role="dialog" aria-modal="true" aria-labelledby="units-title">
+  <div class="modal glass">
+    <h3 id="units-title">设置单位</h3>
+    <p class="modal-sub">与桌面版的「设置单位」对话框一致：压强 5 种、温标 3 种；确定后输入框的占位符与区间会跟着变。</p>
+
+    <div class="field">
+      <div class="field-label">压强</div>
+      <div class="radio-grid" id="pressure-radios">
+        <label class="radio-card"><input type="radio" name="pu" value="Pa">Pa<small>50000~110000</small></label>
+        <label class="radio-card"><input type="radio" name="pu" value="hPa" checked>hPa<small>500~1100</small></label>
+        <label class="radio-card"><input type="radio" name="pu" value="mmHg">mmHg<small>375~825</small></label>
+        <label class="radio-card"><input type="radio" name="pu" value="cmHg">cmHg<small>37.5~82.5</small></label>
+        <label class="radio-card"><input type="radio" name="pu" value="bar">bar<small>0.5~1.1</small></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">温标</div>
+      <div class="radio-grid" id="temperature-radios">
+        <label class="radio-card"><input type="radio" name="tu" value="K">K<small>123.15~473.15</small></label>
+        <label class="radio-card"><input type="radio" name="tu" value="℃" checked>℃<small>-150~200</small></label>
+        <label class="radio-card"><input type="radio" name="tu" value="℉">℉<small>-238~392</small></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label"><span>强调色</span><span class="field-hint">桌面版读 assets/cfg.json 的 title_color</span></div>
+      <div class="row">
+        <input type="color" id="accent-input" value="#47949d" style="width:56px;height:38px;padding:2px;border-radius:12px;cursor:pointer">
+        <span class="mono tiny" id="accent-readout">rgb(71, 148, 157)</span>
+        <div class="spacer" style="flex:1 1 auto"></div>
+        <button class="btn small" id="btn-accent-reset" type="button">恢复默认</button>
+      </div>
+    </div>
+
+    <div class="btn-row row end" style="margin-top:18px">
+      <button class="btn" id="btn-units-cancel" type="button">取消</button>
+      <button class="btn primary" id="btn-units-ok" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<noscript>
+  <div class="shell"><div class="card glass">
+    <h2 class="card-title">需要 JavaScript</h2>
+    <p class="tiny">网页版的计算全部在浏览器里完成（这也是它不上传任何数据的原因），因此必须启用 JavaScript。</p>
+  </div></div>
+</noscript>
+
+<script>/*__VECTORS__*/</script>
+<script>/*__CORE__*/</script>
+<script>/*__UI__*/</script>
+</body>
+</html>
