@@ -12,33 +12,36 @@
 
 ## ⚡ 30 秒试一下
 
-不用装 Python、不用开界面。到 [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases) 下载
-**`WetBulbCLI-*.exe`**（约 6.5 MB，**零第三方依赖**），然后一条命令：
+**不用装 Python，也不用下载。** 直接打开
+**[网页版 → navi.x1shang.top/wetbulb](https://navi.x1shang.top/wetbulb/)**：
+页面默认是「已知露点求湿球」、`25 ℃ / 露点 15 ℃ / 1013.25 hPa`，点「计算」就能看到
+14 条公式的逐条结果；超出注册域的公式会写明「不适用」。
 
-```powershell
-.\WetBulbCLI-v1.3.4.exe --mode rh --temperature 25 --value 60
-```
+三种模式、单位换算、批量导入导出与迭代可视化都在网页里。全部计算在本机浏览器完成，
+数据不上传，手机 / 平板也能直接用。
 
-输出是 JSON（25 ℃ / 相对湿度 60 %，**逐公式**给出露点与湿球）：
-
-```json
-{"version": "v1.3.4", "mode": "rh", "results": [
-  {"method": "Goff-水面",   "result1": 16.7003, "result2": 19.5488},
-  {"method": "Wexler-水面", "result1": 16.7011, "result2": 19.5490},
-  {"method": "Buck-水面",   "result1": 16.6993, "result2": 19.5497},
-  {"method": "Gili-水面",   "result1": 16.6998, "result2": 19.5504},
-  {"method": "Goff-冰面",   "result1": "不适用", "result2": null}
-]}
-```
-
-（`Gili-水面` 即**纪利公式**，属中文给排水/冷却塔工程式，原文见
-[精度与参考文献](docs/精度与参考文献.md)。超出注册域的公式保留 `"不适用"`。）
-
-`--mode` 换成 `dewpoint` / `wetbulb` 就是另外两种模式；`--help` 看全部参数；错误输入会写入 stderr 并返回退出码 2。
+> 要命令行或离线 exe？到 [Releases](https://github.com/x1shang/Wetbulb-Calculator/releases)
+> 下载 `WetBulbCLI-*.exe`（零第三方依赖），用法见下方「命令行」。
 
 **想先确认它算得准不准？** → [`docs/精度与参考文献.md`](docs/精度与参考文献.md)：14 条公式在各自注册区间上的实测偏差表、五方独立参照（IAPWS-95 / Murphy & Koop 2005 / WMO 表 / ASHRAE / Stull 2011）、以及**明写的已知局限**。
 
 **算得不对、或想加一条公式？** → [开一个 Issue](https://github.com/x1shang/Wetbulb-Calculator/issues/new/choose)，模板会问我要的四件事（场景 / 期望值与依据 / 实际结果 / 版本）。能复现的算例我会直接加进 `tests/` 当回归用例。
+
+---
+
+## 🌡️ 适用温度区间（实测）
+
+输入框允许 −150~200 ℃，但这不是每条公式都能算的范围。实测「至少一条公式给出数值」：
+
+| 条件 | 可算出数值的干球温度 |
+|---|---|
+| 默认：模式「已知露点求湿球」、25 ℃ / 露点 15 ℃ / 1013.25 hPa | **15 ℃ < T ≤ 199.9393 ℃** |
+| 三种模式合起来（任一模式有数值）、第二输入取遍合法值、500~1100 hPa | **−103 ℃ ≤ T ≤ 200 ℃** |
+
+下限由 `Marti-冰面` 的 −103 ℃ 决定（在「已知相对湿度」模式可取到；露点/湿球模式只能无限接近），
+上限由 `Wexler-水面` 的 200 ℃ 决定（常压下需把 RH 降到约 6% 以下，否则水汽分压超过总压）。默认点 25 ℃ / 露点 15 ℃ 下 14 条公式中 9 条可用，
+其余 5 条冰面公式因干球/露点高于 0 ℃ 自动标「不适用」。
+详见 [精度与参考文献](docs/精度与参考文献.md#已知限制)。
 
 ---
 
@@ -61,7 +64,8 @@
 
 ## 🌐 网页版（v2.0.0）
 
-不想装 Python、也不想下载 exe？[`web/index.html`](web/index.html) 是**一个 230 KB 的单文件网页版**：
+不想装 Python、也不想下载 exe？直接开 **[navi.x1shang.top/wetbulb](https://navi.x1shang.top/wetbulb/)**，
+或者用 [`web/index.html`](web/index.html) 这个 **230 KB 的单文件网页版**：
 双击就用，离线可用，全部计算在本机浏览器里完成（不上传任何数据）。
 Releases 里也提供同内容的 [`WetBulbCalculator-web-*.html`](https://github.com/x1shang/Wetbulb-Calculator/releases)，
 与两个 exe 一起校验 SHA256。
