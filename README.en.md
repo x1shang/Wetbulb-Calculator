@@ -106,3 +106,15 @@ Push a new tag matching core.tag to trigger a tested release. Historical tag rew
 
 Fluent Widgets is used throughout the GUI; scipy and colorthief are required and declared dependencies.
 The combined GUI includes GPLv3 components; the project's MIT license does not replace their licenses.
+
+---
+
+## 📌 Academic poster
+
+This tool is the technical backbone of our research project
+*A study on determining precipitation phase by wet-bulb melting-layer area*:
+every wet-bulb temperature and melting-layer area in the study was computed with it.
+
+Paper (typeset in LaTeX) → [x1shang.top/academic/湿球融化层面积判断降水相态](https://x1shang.top/academic/湿球融化层面积判断降水相态/)
+
+[![Project poster: a study on determining precipitation phase by wet-bulb melting-layer area](assets/academic-poster.png)](https://x1shang.top/academic/湿球融化层面积判断降水相态/)
